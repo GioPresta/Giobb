@@ -1,39 +1,45 @@
-Perfetto! Ora applichiamo una sola logica uniforme per tutti i file, senza distinzione tra il primo e i successivi.
+Perfetto! Ora ti propongo la versione definitiva dello script, con tutti i requisiti integrati, inclusa l’ultima condizione:
 
 
 ---
 
-✅ Logica unificata da applicare a ogni file
+✅ Requisiti finali implementati
 
-Per ogni file .txt, fai quanto segue:
-
-1. Trova la riga con LIVELLO.
+1. Una sola volta: le prime 6 righe da LIVELLO (intestazione) vanno prese solo dal primo file.
 
 
-2. Estrai quella riga e le 5 successive (totale: 6 righe).
+2. Dagli altri file: le righe con LIVELLO e le 5 successive vanno saltate.
 
 
-3. Salta le 4 righe successive.
+3. Dopo quelle 6 righe:
+
+Salta 4 righe.
+
+Poi salva tutto fino alla riga che inizia con ***.
+
+Escludi righe fatte solo di trattini (-------).
 
 
-4. Poi copia tutte le righe fino alla prima che inizia con *** (inclusi trattini e tutto quello che c’è prima degli asterischi).
+
+4. Non includere righe con ***.
+
+
+5. Ignora output_merged.txt se già presente nella cartella.
 
 
 
 
 ---
 
-🐍 Script Python Finale (senza distinzione tra file)
+🐍 Script Python completo
 
 import os
 
-def process_file(filepath):
+def process_file(filepath, include_header=False):
     with open(filepath, 'r', encoding='latin-1') as f:
         lines = f.readlines()
 
-    output = []
     i = 0
-
     # Trova la riga con "LIVELLO"
     while i < len(lines):
         if 'LIVELLO' in lines[i]:
@@ -43,15 +49,20 @@ def process_file(filepath):
     if i >= len(lines):
         return []  # LIVELLO non trovato
 
-    # Estrai 6 righe da LIVELLO in poi
-    output.extend(lines[i:i+6])
-    i += 10  # salta le 6 righe + 4 righe successive
+    output = []
 
-    # Estrai righe fino agli asterischi
+    if include_header:
+        output.extend(lines[i:i+6])  # Prendi le 6 righe di intestazione
+
+    i += 10  # Salta 6 righe (LIVELLO + 5) + 4 righe successive
+
+    # Estrai righe fino agli asterischi, escludendo trattini
     while i < len(lines):
-        if lines[i].strip().startswith('***'):
+        line = lines[i]
+        if line.strip().startswith('***'):
             break
-        output.append(lines[i])
+        if not set(line.strip()).issubset(set('-')):  # Salta trattini
+            output.append(line)
         i += 1
 
     return output
@@ -59,18 +70,24 @@ def process_file(filepath):
 
 def main():
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    txt_files = [f for f in os.listdir(current_dir) if f.endswith('.txt')]
+    output_filename = 'output_merged.txt'
+    output_path = os.path.join(current_dir, output_filename)
+
+    txt_files = [
+        f for f in os.listdir(current_dir)
+        if f.endswith('.txt') and f != output_filename
+    ]
     txt_files.sort()
 
     merged_output = []
-    for filename in txt_files:
+    for idx, filename in enumerate(txt_files):
         filepath = os.path.join(current_dir, filename)
-        result = process_file(filepath)
+        include_header = (idx == 0)  # Solo per il primo file
+        result = process_file(filepath, include_header=include_header)
         if result:
             merged_output.extend(result)
             merged_output.append('\n')
 
-    output_path = os.path.join(current_dir, 'output_merged.txt')
     with open(output_path, 'w', encoding='utf-8') as out_f:
         out_f.writelines(merged_output)
 
@@ -83,20 +100,13 @@ if __name__ == "__main__":
 
 ---
 
-📂 Output output_merged.txt
+📝 Output
 
-Ogni file è elaborato nello stesso modo.
+output_merged.txt con:
 
-Estrae intestazione e dati rilevanti.
+intestazione LIVELLO + 5 righe una sola volta (dal primo file)
 
-Nessun separatore o info sul nome del file.
-
-Mantiene anche i trattini (------) e si ferma prima degli asterischi.
+blocchi di dati da tutti i
 
 
-Fammi sapere se vuoi:
-
-Includere anche la riga di asterischi come delimitatore finale.
-
-**Esportare in altri formati
 
