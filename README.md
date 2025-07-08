@@ -1,11 +1,11 @@
 import os
 import re
 
-# Regex per rilevare la riga di fine sezione (es. *****...)
+#Regex per rilevare la riga di fine sezione (es. *****...)
 END_SECTION_PATTERN = re.compile(r'^\s*\*{5,}\s*$')
-# Righe di decorazione (es. ----, ===, ...)
+#Righe di decorazione (es. ----, ===, ...)
 DECORATION_PATTERN = re.compile(r'^[\s\-\*=_\.]{4,}$')
-# Righe che iniziano con LIVELLO (ignora maiuscole)
+#Righe che iniziano con LIVELLO (ignora maiuscole)
 START_HEADER_PATTERN = re.compile(r'^\s*LIVELLO\b', re.IGNORECASE)
 
 def extract_error_lines(file_path, header_collected):
