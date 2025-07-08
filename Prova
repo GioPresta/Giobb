@@ -1,76 +1,80 @@
-Grazie. Ora non ci sono più dubbi.
+Perfetto! Ecco la versione dello script che legge i file da una cartella specifica (a tua scelta), ad esempio:
+
+C:/ReportBatch/
 
 
 ---
 
-✅ Struttura esatta di ogni file:
+✅ COSA CAMBIA
 
-1. 6 righe di intestazione → da salvare una volta sola
+Non prende i .txt dalla cartella dello script
 
+Ma da un percorso preciso che puoi modificare
 
-2. 4 righe di trattini → da ignorare
+Tutto il resto resta uguale: 6 righe intestazione, 4 trattini ignorati, polizze lette, output in riepilogo.txt e riepilogo.csv
 
-
-3. 1 o più righe di dati (le polizze) → da raccogliere tutte
-
-
-4. riga di asterischi (*****) → da fermare la lettura
-
-
-
-E tutti i file .txt seguono questa struttura identica.
 
 
 ---
 
-🧾 Codice finale – rispetta esattamente questa sequenza
+🧾 SCRIPT COMPLETO – con percorso cartella personalizzato
 
 import os
 import re
 import csv
 
-# Pattern per individuare blocchi
+# 🔁 IMPOSTA QUI IL PERCORSO DELLA CARTELLA DEI FILE
+cartella_input = r'C:/ReportBatch'  # <-- cambia questo percorso a piacere
+
+# Pattern riconoscimento struttura file
 inizio_intestazione = re.compile(r'\bLIVELLO\b', re.IGNORECASE)
 riga_asterischi = re.compile(r'^\*{5,}$')
 riga_decorativa = re.compile(r'^[-\s]{10,}$')
 
-# Per salvare
 header_lines = []
 righe_dati = []
 intestazione_salvata = False
 
-for nome_file in os.listdir():
-    if nome_file.endswith('.txt') and not nome_file.startswith('riepilogo'):
-        with open(nome_file, 'r', encoding='latin1') as f:
-            lines = f.readlines()
+# Elenco dei file txt nella cartella scelta
+file_txt = [f for f in os.listdir(cartella_input) if f.endswith('.txt') and not f.startswith('riepilogo')]
 
-            # Cerca la riga "LIVELLO"
-            for i, line in enumerate(lines):
-                if inizio_intestazione.search(line.strip()):
-                    start_index = i
-                    break
-            else:
-                continue  # Se non trova LIVELLO, salta file
+if not file_txt:
+    print("❌ Nessun file .txt trovato nella cartella:", cartella_input)
+    exit()
 
-            # Prendi le 6 righe di intestazione
-            intestazione = [lines[start_index + j].rstrip('\n') for j in range(6)]
+for nome_file in file_txt:
+    percorso_file = os.path.join(cartella_input, nome_file)
 
-            if not intestazione_salvata:
-                header_lines = intestazione
-                intestazione_salvata = True
+    with open(percorso_file, 'r', encoding='latin1') as f:
+        lines = f.readlines()
 
-            # Salta le 4 righe di trattini subito dopo
-            index = start_index + 10
+        # Trova riga con "LIVELLO"
+        start_index = None
+        for i, line in enumerate(lines):
+            if inizio_intestazione.search(line.strip()):
+                start_index = i
+                break
+        else:
+            print(f"⚠ 'LIVELLO' non trovato in {nome_file}")
+            continue
 
-            # Ora leggi i dati fino agli asterischi
-            for line in lines[index:]:
-                riga = line.strip()
-                if riga_asterischi.match(riga):
-                    break
-                if riga:  # se non è vuota
-                    righe_dati.append(riga)
+        # Salva le 6 righe di intestazione (una volta sola)
+        if not intestazione_salvata:
+            header_lines = [lines[start_index + j].rstrip('\n') for j in range(6)]
+            intestazione_salvata = True
 
-# Funzione per combinare le 6 righe in intestazioni verticali
+        # Salta le 4 righe di trattini dopo l’intestazione
+        index = start_index + 10
+
+        # Legge i dati (fino agli asterischi)
+        for line in lines[index:]:
+            riga = line.strip()
+            if riga_asterischi.match(riga):
+                break
+            if riga:
+                righe_dati.append(riga)
+
+# Crea intestazioni CSV combinando verticalmente le 6 righe
 def crea_colonne_da_header(righe):
     split = [re.split(r'\s{2,}', r.strip()) for r in righe]
     max_col = max(len(r) for r in split)
@@ -79,10 +83,9 @@ def crea_colonne_da_header(righe):
             r.append('')
     return [' '.join(col).strip() for col in zip(*split)]
 
-# Costruzione colonne
 final_headers = crea_colonne_da_header(header_lines)
 
-# Scrittura riepilogo.txt
+# Scrittura riepilogo.txt nella stessa cartella dello script
 with open('riepilogo.txt', 'w', encoding='utf-8') as f:
     for r in header_lines:
         f.write(r + '\n')
@@ -97,23 +100,16 @@ with open('riepilogo.csv', 'w', encoding='utf-8', newline='') as f:
         valori = re.split(r'\s{2,}', r.strip())
         writer.writerow(valori)
 
-print("✅ Fatto! Tutti i file elaborati con struttura esatta.")
+print(f"\n✅ Fatti! Letti {len(file_txt)} file da: {cartella_input}")
+print(f"📄 Trovate {len(righe_dati)} righe dati.")
+print("📝 File salvati: riepilogo.txt + riepilogo.csv")
 
 
 ---
 
-✅ Cosa garantisce:
+📌 ISTRUZIONI
 
-6 righe prese da ogni file? ❌ No. Solo dal primo file.
-
-4 righe di trattini? ✅ Ignorate sempre.
-
-Riga *****? ✅ Serve da stop.
-
-Righe dati? ✅ Nessuna viene saltata.
+1. Cambia questa riga con la cartella dove hai
 
 
 
----
-
-Vuoi anche sapere da quale file viene ogni riga dati? Posso aggiungere una colonna "FONTE". Ma con questo script, il tuo formato è gestito al 100%.
