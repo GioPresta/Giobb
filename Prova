@@ -1,34 +1,50 @@
-Perfetto! Ora estendiamo lo script con una seconda fase:
+Perfetto, grazie per la precisazione. Allora dobbiamo gestire anche righe con trattini parziali o misti con spazi, ad esempio:
 
+--------
 
----
+-
 
-✅ FASE 1: Genera l’output output_merged.txt
+--     ----
 
-Per ogni file:
+  -------   
 
-Copia LIVELLO + 5 righe sotto.
-
-Copia tutto fino a ***, saltando righe di soli trattini.
-
-
-Salva tutto in output_merged.txt.
+ecc.
 
 
 
 ---
 
-✅ FASE 2: Riapri output_merged.txt
+✅ Obiettivo aggiornato:
 
-Elimina tutte le righe composte solo da trattini (---- ecc.).
+Eliminare qualsiasi riga che contiene solo spazi e trattini, anche se:
 
-Sovrascrive il file con la versione ripulita.
+è corta o lunga;
+
+ha trattini separati da spazi;
+
+ha solo un trattino o una combinazione di essi.
 
 
 
 ---
 
-🐍 SCRIPT COMPLETO: Estrazione + Pulizia Finale
+🛠 Come farlo
+
+Aggiorniamo la logica di pulizia con:
+
+if not set(line.strip()).issubset(set('- ')):
+
+Questo rimuove righe che contengono solo:
+
+trattini (-)
+
+spazi ( )
+
+
+
+---
+
+🐍 Script Finale con Pulizia Intelligente delle Righe "Trattinate"
 
 import os
 
@@ -42,20 +58,20 @@ def process_file(filepath):
         i += 1
 
     if i >= len(lines):
-        return []  # Se "LIVELLO" non trovato, salta il file
+        return []
 
     output = []
 
-    # Copia LIVELLO + 5 righe successive (6 in totale)
+    # Copia 6 righe da LIVELLO incluso
     output.extend(lines[i:i+6])
     i += 6
 
-    # Copia righe fino agli asterischi, saltando righe solo di trattini
+    # Copia fino agli asterischi, saltando righe solo con trattini/spazi
     while i < len(lines):
         line = lines[i]
         if line.strip().startswith('***'):
             break
-        if not set(line.strip()).issubset(set('-')):
+        if not set(line.strip()).issubset(set('- ')):
             output.append(line)
         i += 1
 
@@ -67,7 +83,7 @@ def clean_output_file(output_path):
 
     cleaned = []
     for line in lines:
-        if not set(line.strip()).issubset(set('-')):
+        if not set(line.strip()).issubset(set('- ')):
             cleaned.append(line)
 
     with open(output_path, 'w', encoding='utf-8') as f:
@@ -89,15 +105,15 @@ def main():
         result = process_file(filepath)
         if result:
             merged_output.extend(result)
-            merged_output.append('\n')  # separatore
+            merged_output.append('\n')
 
     with open(output_path, 'w', encoding='utf-8') as out_f:
         out_f.writelines(merged_output)
 
-    # Seconda fase: pulizia trattini residui
+    # Pulizia finale: righe solo di trattini e spazi
     clean_output_file(output_path)
 
-    print(f'✅ File finale pulito e pronto: {output_path}')
+    print(f'✅ File pulito e creato correttamente: {output_path}')
 
 
 if __name__ == "__main__":
@@ -106,6 +122,31 @@ if __name__ == "__main__":
 
 ---
 
-🎯 Comportamento finale
+✅ Esempi di righe eliminate
 
-| Fase | Azione |
+Tutte le seguenti verranno eliminate correttamente:
+
+------
+-   -  -    -
+  ----------------
+ -
+
+Ma righe tipo:
+
+- Valore negativo -
+Note - importante
+
+verranno mantenute (perché contengono anche altri caratteri).
+
+
+---
+
+Fammi sapere se vuoi:
+
+Che vengano rimosse anche righe vuote.
+
+Che venga salvato anche un file output_raw.txt prima della pulizia.
+
+
+Questo script ora è pronto all’uso, pulito e preciso al 100% ✅
+
