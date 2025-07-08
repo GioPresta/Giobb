@@ -1,23 +1,24 @@
 import os
 import re
 
-# Regex per rilevare la riga di fine sezione (es. *****...)
+# Riconosce riga di chiusura con asterischi
 END_SECTION_PATTERN = re.compile(r'^\s*\*{5,}\s*$')
-# Righe di decorazione (es. ----, ===, ...)
+# Righe solo decorative (es. ----, ****, etc.)
 DECORATION_PATTERN = re.compile(r'^[\s\-\*=_\.]{4,}$')
-# Righe che iniziano con LIVELLO (ignora maiuscole)
+# Intestazione "LIVELLO ..." (inizio sezione)
 START_HEADER_PATTERN = re.compile(r'^\s*LIVELLO\b', re.IGNORECASE)
 
-def extract_error_lines(file_path, header_collected):
-    with open(file_path, 'r', encoding='utf-8') as f:
+def extract_error_lines(file_path, header_saved_flag):
+    with open(file_path, 'r', encoding='latin1') as f:
         in_section = False
         collected = []
         for line in f:
             if not in_section:
                 if START_HEADER_PATTERN.match(line):
                     in_section = True
-                    if not header_collected[0]:
-                        header_collected[0] = line.strip()  # salva una sola intestazione
+                    if not header_saved_flag[0]:
+                        header_saved_flag[0] = True
+                        collected.append(line.strip())
             else:
                 if END_SECTION_PATTERN.match(line):
                     break
@@ -31,20 +32,18 @@ def merge_all_reports(output_file='riepilogo.txt'):
                  if f.endswith('.txt') and f != output_file]
 
     all_lines = []
-    header = [None]  # lista con un solo elemento mutabile (trucchetto Python)
+    header_written = [False]  # flag modificabile dentro le funzioni
 
     for txt_file in txt_files:
         file_path = os.path.join(current_dir, txt_file)
-        lines = extract_error_lines(file_path, header)
+        lines = extract_error_lines(file_path, header_written)
         all_lines.extend(lines)
 
     with open(output_file, 'w', encoding='utf-8') as out:
-        if header[0]:
-            out.write(header[0] + '\n')  # scrive una sola intestazione
-        out.write('\n'.join(all_lines))
-        out.write('\n')
+        for line in all_lines:
+            out.write(line + '\n')
 
-    print(f"✔ Report unificato salvato in '{output_file}'.")
+    print(f"✔ Report finale generato in '{output_file}'.")
 
 if __name__ == "__main__":
     merge_all_reports()
