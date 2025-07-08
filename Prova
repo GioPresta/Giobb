@@ -1,41 +1,45 @@
-
-Perfetto! Ecco lo script completo e funzionante che:
+Eccoti lo script completo, corretto e definitivo, con:
 
 
 ---
 
-✅ Cosa fa:
+✅ Caratteristiche finali:
 
-Unisce tutti i file .txt nella cartella dello script
+Legge tutti i file .txt nella cartella
 
-Estrae solo la sezione da “LIVELLO” fino alla riga con asterischi
+Estrae solo il blocco da LIVELLO fino alla riga di asterischi (*****)
 
-Rimuove righe vuote o decorative (----, *****, ecc.)
+Rimuove righe decorative (----, ====, ecc.)
 
 Scrive:
 
-un file riepilogo.txt pulito
+un file riepilogo.txt
 
-un file riepilogo.csv leggibile da Excel senza bisogno di installare niente
+un file riepilogo.csv leggibile da Excel
+
+
+✅ Scrive una sola volta l’intestazione (es. Gravità  Oggetto  Errore)
+
+Anche se l’intestazione si ripete nei contenuti degli altri file
 
 
 
 
 ---
 
-🧾 Codice completo (senza dipendenze esterne)
+🧾 Codice completo (non richiede librerie esterne)
 
 import os
 import re
 import csv
 
-# Regex per struttura dei report
-END_SECTION_PATTERN = re.compile(r'^\s*\*{5,}\s*$')
-DECORATION_PATTERN = re.compile(r'^[\s\-\*=_\.]{4,}$')
-START_HEADER_PATTERN = re.compile(r'^\s*LIVELLO\b', re.IGNORECASE)
+# Regex per struttura file batch
+END_SECTION_PATTERN = re.compile(r'^\s*\*{5,}\s*$')                # *****...
+DECORATION_PATTERN = re.compile(r'^[\s\-\*=_\.]{4,}$')             # ----, ====
+START_HEADER_PATTERN = re.compile(r'^\s*LIVELLO\b', re.IGNORECASE) # Inizio sezione
 
 def extract_section(file_path):
-    """Estrae intestazione + righe dati da un file txt"""
+    """Estrae intestazione + righe dati da un file .txt"""
     with open(file_path, 'r', encoding='latin1') as f:
         in_section = False
         header = None
@@ -56,21 +60,21 @@ def extract_section(file_path):
 
         return header, content
 
+
 def write_csv_file(header_line, data_lines, output_csv='riepilogo.csv'):
-    """Scrive i dati estratti in un CSV leggibile da Excel"""
+    """Scrive i dati estratti in un file CSV compatibile con Excel"""
     with open(output_csv, 'w', encoding='utf-8', newline='') as f:
         writer = csv.writer(f, delimiter=';')
 
-        # Scrivi intestazione
         headers = re.split(r'\s{2,}', header_line.strip())
         writer.writerow(headers)
 
-        # Scrivi righe dati
         for line in data_lines:
             values = re.split(r'\s{2,}', line.strip())
             writer.writerow(values)
 
-    print(f"📄 File CSV generato: {output_csv}")
+    print(f"📄 CSV generato: {output_csv}")
+
 
 def merge_all_reports(output_txt='riepilogo.txt', output_csv='riepilogo.csv'):
     current_dir = os.getcwd()
@@ -85,9 +89,15 @@ def merge_all_reports(output_txt='riepilogo.txt', output_csv='riepilogo.csv'):
         header, content = extract_section(file_path)
 
         if saved_header is None and header:
-            saved_header = header
+            saved_header = header.strip()
 
-        merged_content.extend(content)
+        # Elimina intestazioni duplicate nei contenuti successivi
+        filtered_content = [
+            line for line in content
+            if saved_header is None or line.strip() != saved_header
+        ]
+
+        merged_content.extend(filtered_content)
 
     # Scrittura file di testo
     with open(output_txt, 'w', encoding='utf-8') as out:
@@ -101,6 +111,7 @@ def merge_all_reports(output_txt='riepilogo.txt', output_csv='riepilogo.csv'):
     if saved_header:
         write_csv_file(saved_header, merged_content, output_csv)
 
+
 if __name__ == "__main__":
     merge_all_reports()
 
@@ -109,36 +120,25 @@ if __name__ == "__main__":
 
 📂 Come usarlo
 
-1. Salva il codice in un file, ad esempio merge_batch_reports.py
+1. Salva il file come merge_batch_reports.py
 
 
-2. Metti nella stessa cartella tutti i tuoi file .txt (come da foto)
+2. Mettilo nella stessa cartella dei .txt
 
 
-3. Esegui lo script:
+3. Apri il terminale in quella cartella
+
+
+4. Esegui:
 
 
 
 python merge_batch_reports.py
 
-➕ Ottieni:
-
-riepilogo.txt → output testuale
-
-riepilogo.csv → apribile in Excel
-
-
 
 ---
 
-Se vuoi:
+🟢 Risultato:
 
-una colonna con il nome del file sorgente
-
-il filtraggio di certe righe
-
-oppure trasformare in .xlsx
-
-
-…fammi un fischio!
+✅ riepilogo.txt: testo pulito, una
 
