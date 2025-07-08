@@ -1,63 +1,33 @@
-Perfetto, ripartiamo da capo e fissiamo la logica definitiva con chiarezza.
+Perfetto! Ora applichiamo una sola logica uniforme per tutti i file, senza distinzione tra il primo e i successivi.
 
 
 ---
 
-✅ Obiettivo del nuovo script
+✅ Logica unificata da applicare a ogni file
 
-Vogliamo unire più file .txt, salvando solo i dati rilevanti in modo coerente, secondo questa logica:
-
-
----
-
-🔹 Primo file:
+Per ogni file .txt, fai quanto segue:
 
 1. Trova la riga con LIVELLO.
 
 
-2. Estrai 6 righe totali, da LIVELLO fino alla quinta riga dopo.
+2. Estrai quella riga e le 5 successive (totale: 6 righe).
 
 
-3. Salta 4 righe.
+3. Salta le 4 righe successive.
 
 
-4. Poi:
-
-Copia tutte le righe fino a una riga che inizia con *** (asterischi).
-
-Includi righe fatte di trattini se ci sono, come da tua richiesta.
-
+4. Poi copia tutte le righe fino alla prima che inizia con *** (inclusi trattini e tutto quello che c’è prima degli asterischi).
 
 
 
 
 ---
 
-🔹 File successivi:
-
-1. Trova la riga con LIVELLO.
-
-
-2. Salta 10 righe a partire da lì (quindi LIVELLO + 5 righe + 4 righe di skip).
-
-
-3. Poi:
-
-Copia tutte le righe fino a una riga che inizia con *** (asterischi).
-
-Anche qui: non escludere righe con trattini — vanno mantenute.
-
-
-
-
-
----
-
-🐍 Script Python Finale
+🐍 Script Python Finale (senza distinzione tra file)
 
 import os
 
-def process_file(filepath, include_header):
+def process_file(filepath):
     with open(filepath, 'r', encoding='latin-1') as f:
         lines = f.readlines()
 
@@ -73,16 +43,11 @@ def process_file(filepath, include_header):
     if i >= len(lines):
         return []  # LIVELLO non trovato
 
-    if include_header:
-        # Primo file: prendi 6 righe da LIVELLO, salta 4, poi copia
-        header = lines[i:i+6]
-        output.extend(header)
-        i += 10  # 6 righe + 4 righe di skip
-    else:
-        # File successivi: salta 10 righe da LIVELLO compreso
-        i += 10
+    # Estrai 6 righe da LIVELLO in poi
+    output.extend(lines[i:i+6])
+    i += 10  # salta le 6 righe + 4 righe successive
 
-    # Copia tutto fino alla riga che inizia con asterischi
+    # Estrai righe fino agli asterischi
     while i < len(lines):
         if lines[i].strip().startswith('***'):
             break
@@ -98,13 +63,12 @@ def main():
     txt_files.sort()
 
     merged_output = []
-    for idx, filename in enumerate(txt_files):
+    for filename in txt_files:
         filepath = os.path.join(current_dir, filename)
-        include_header = (idx == 0)
-        result = process_file(filepath, include_header)
+        result = process_file(filepath)
         if result:
             merged_output.extend(result)
-            merged_output.append('\n')  # Separatore vuoto tra file
+            merged_output.append('\n')
 
     output_path = os.path.join(current_dir, 'output_merged.txt')
     with open(output_path, 'w', encoding='utf-8') as out_f:
@@ -119,25 +83,20 @@ if __name__ == "__main__":
 
 ---
 
-📂 Output finale
+📂 Output output_merged.txt
 
-File output_merged.txt nella stessa directory dello script.
+Ogni file è elaborato nello stesso modo.
 
-Solo l’intestazione del primo file.
+Estrae intestazione e dati rilevanti.
 
-Tutti i dati rilevanti dei file successivi coerenti.
+Nessun separatore o info sul nome del file.
 
-Nessun nome file, nessuna intestazione superflua.
-
-Nessun filtro sui trattini: vengono mantenuti.
+Mantiene anche i trattini (------) e si ferma prima degli asterischi.
 
 
-Fammi sapere se:
+Fammi sapere se vuoi:
 
-Vuoi includere anche la riga degli asterischi come “fine blocco”.
+Includere anche la riga di asterischi come delimitatore finale.
 
-Vuoi esportarlo anche in .csv o .xlsx.
-
-
-Pronto per essere usato così com’è!
+**Esportare in altri formati
 
