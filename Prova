@@ -1,32 +1,41 @@
-Perfetto, grazie! Ora è ultra-preciso ✅
+Grazie. Ora non ci sono più dubbi.
 
 
 ---
 
-✅ Aggiornamento finale:
+✅ Struttura esatta di ogni file:
 
-Dopo le 6 righe di intestazione, ci sono sempre esattamente 4 righe di trattini che devono essere:
-
-> ❌ completamente ignorate
-✅ non fanno parte né dell’intestazione né dei dati
+1. 6 righe di intestazione → da salvare una volta sola
 
 
+2. 4 righe di trattini → da ignorare
+
+
+3. 1 o più righe di dati (le polizze) → da raccogliere tutte
+
+
+4. riga di asterischi (*****) → da fermare la lettura
+
+
+
+E tutti i file .txt seguono questa struttura identica.
 
 
 ---
 
-🧾 Codice finale aggiornato con rimozione esatta delle 4 righe di trattini
+🧾 Codice finale – rispetta esattamente questa sequenza
 
 import os
 import re
 import csv
 
-# Riconosce blocchi
-inizio_intestazione = re.compile(r'^\s*LIVELLO\b', re.IGNORECASE)
+# Pattern per individuare blocchi
+inizio_intestazione = re.compile(r'\bLIVELLO\b', re.IGNORECASE)
 riga_asterischi = re.compile(r'^\*{5,}$')
+riga_decorativa = re.compile(r'^[-\s]{10,}$')
 
+# Per salvare
 header_lines = []
-final_headers = []
 righe_dati = []
 intestazione_salvata = False
 
@@ -34,33 +43,35 @@ for nome_file in os.listdir():
     if nome_file.endswith('.txt') and not nome_file.startswith('riepilogo'):
         with open(nome_file, 'r', encoding='latin1') as f:
             lines = f.readlines()
-            start_index = None
 
-            # Trova la riga con LIVELLO
+            # Cerca la riga "LIVELLO"
             for i, line in enumerate(lines):
-                if inizio_intestazione.match(line.strip()):
+                if inizio_intestazione.search(line.strip()):
                     start_index = i
                     break
+            else:
+                continue  # Se non trova LIVELLO, salta file
 
-            if start_index is not None:
-                # Salva le 6 righe di intestazione solo una volta
-                if not intestazione_salvata:
-                    header_lines = [lines[start_index + j].rstrip('\n') for j in range(6)]
-                    intestazione_salvata = True
+            # Prendi le 6 righe di intestazione
+            intestazione = [lines[start_index + j].rstrip('\n') for j in range(6)]
 
-                # Salta le 6 righe + le 4 successive (i trattini)
-                index_dati = start_index + 10
+            if not intestazione_salvata:
+                header_lines = intestazione
+                intestazione_salvata = True
 
-                # Leggi le righe dati fino agli asterischi
-                for line in lines[index_dati:]:
-                    clean = line.strip()
-                    if riga_asterischi.match(clean):
-                        break
-                    if clean:
-                        righe_dati.append(clean)
+            # Salta le 4 righe di trattini subito dopo
+            index = start_index + 10
 
-# Unisce le intestazioni verticalmente (6 righe in colonne)
-def crea_intestazioni_verticali(righe):
+            # Ora leggi i dati fino agli asterischi
+            for line in lines[index:]:
+                riga = line.strip()
+                if riga_asterischi.match(riga):
+                    break
+                if riga:  # se non è vuota
+                    righe_dati.append(riga)
+
+# Funzione per combinare le 6 righe in intestazioni verticali
+def crea_colonne_da_header(righe):
     split = [re.split(r'\s{2,}', r.strip()) for r in righe]
     max_col = max(len(r) for r in split)
     for r in split:
@@ -68,16 +79,17 @@ def crea_intestazioni_verticali(righe):
             r.append('')
     return [' '.join(col).strip() for col in zip(*split)]
 
-final_headers = crea_intestazioni_verticali(header_lines)
+# Costruzione colonne
+final_headers = crea_colonne_da_header(header_lines)
 
-# Scrive riepilogo.txt
+# Scrittura riepilogo.txt
 with open('riepilogo.txt', 'w', encoding='utf-8') as f:
     for r in header_lines:
         f.write(r + '\n')
     for r in righe_dati:
         f.write(r + '\n')
 
-# Scrive riepilogo.csv
+# Scrittura riepilogo.csv
 with open('riepilogo.csv', 'w', encoding='utf-8', newline='') as f:
     writer = csv.writer(f, delimiter=';')
     writer.writerow(final_headers)
@@ -85,26 +97,23 @@ with open('riepilogo.csv', 'w', encoding='utf-8', newline='') as f:
         valori = re.split(r'\s{2,}', r.strip())
         writer.writerow(valori)
 
-print("✅ Fatto! 6 righe di intestazione + dati reali. 4 righe di trattini rimosse correttamente.")
+print("✅ Fatto! Tutti i file elaborati con struttura esatta.")
 
 
 ---
 
-✅ Ora fa esattamente questo:
+✅ Cosa garantisce:
 
-🔹 Prende 6 righe (da LIVELLO in giù)
+6 righe prese da ogni file? ❌ No. Solo dal primo file.
 
-❌ Salta le 4 righe di trattini
+4 righe di trattini? ✅ Ignorate sempre.
 
-✅ Prende tutte le righe successive (fino agli *****)
+Riga *****? ✅ Serve da stop.
 
-❌ Ignora gli *****
-
-✅ Scrive tutto in riepilogo.txt e riepilogo.csv con intestazioni perfette
+Righe dati? ✅ Nessuna viene saltata.
 
 
 
 ---
 
-Vuoi che aggiunga la colonna con il nome del file origine per ogni riga? Posso farlo in un attimo!
-
+Vuoi anche sapere da quale file viene ogni riga dati? Posso aggiungere una colonna "FONTE". Ma con questo script, il tuo formato è gestito al 100%.
