@@ -1,29 +1,21 @@
-Perfetto! Ecco uno script Python completo che:
-
-Legge tutti i file .txt nella stessa directory in cui si trova lo script.
-
-Applica la logica che hai definito.
-
-Scrive il risultato in un file chiamato output_merged.txt nella stessa directory.
-
+Certo! Ecco lo script completo aggiornato che usa encoding='latin-1' per leggere correttamente i file .txt, evitando l’errore di decodifica:
 
 
 ---
 
-🐍 Script Python
+🐍 Script Python aggiornato (usa latin-1)
 
 import os
 
 def process_file(filepath, include_header):
-    lines = []
-    with open(filepath, 'r', encoding='utf-8') as f:
+    with open(filepath, 'r', encoding='latin-1') as f:
         raw_lines = f.readlines()
 
     output = []
     i = 0
     found_header = False
 
-    # Cerca riga con LIVELLO
+    # Cerca la riga con "LIVELLO"
     while i < len(raw_lines):
         if 'LIVELLO' in raw_lines[i]:
             found_header = True
@@ -32,19 +24,20 @@ def process_file(filepath, include_header):
 
     if found_header:
         header_start = i
-        header_end = i + 6  # inclusa la riga LIVELLO
+        header_end = i + 6  # 6 righe totali: LIVELLO + 5
         if include_header:
             output.extend(raw_lines[header_start:header_end])
-        i = header_end + 4  # salta 4 righe dopo l'intestazione
+        i = header_end + 4  # salta 4 righe dopo
     else:
-        return []  # File non valido
+        return []  # File non valido o struttura diversa
 
-    # Estrai le righe fino agli asterischi
+    # Estrai righe fino agli asterischi
     while i < len(raw_lines):
         line = raw_lines[i]
         if line.strip().startswith('***'):
             break
-        if not set(line.strip()).issubset(set('-')):  # salta i trattini
+        # Salta riga se fatta solo di trattini
+        if not set(line.strip()).issubset(set('-')):
             output.append(line)
         i += 1
 
@@ -54,12 +47,12 @@ def process_file(filepath, include_header):
 def main():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     txt_files = [f for f in os.listdir(current_dir) if f.endswith('.txt')]
-    txt_files.sort()  # per processarli in ordine
+    txt_files.sort()
 
     merged_output = []
     for idx, filename in enumerate(txt_files):
         filepath = os.path.join(current_dir, filename)
-        include_header = idx == 0  # solo per il primo file
+        include_header = idx == 0  # Solo il primo file ha intestazione
         result = process_file(filepath, include_header)
         if result:
             merged_output.append(f'--- FILE: {filename} ---\n')
@@ -79,27 +72,24 @@ if __name__ == "__main__":
 
 ---
 
-📌 Dettagli
+📂 Output
 
 Il file output_merged.txt conterrà:
 
-L’intestazione (LIVELLO e 5 righe sotto) una sola volta (dal primo file).
+L’intestazione LIVELLO + 5 righe solo dal primo file.
 
-I dati utili di tutti i file (saltando trattini e fermandosi agli asterischi).
+I dati utili da tutti i file (ignorando trattini e fermandosi agli asterischi).
 
-Un separatore --- FILE: nomefile.txt --- prima di ogni blocco.
+Separatore --- FILE: nomefile.txt --- tra ogni blocco.
 
-
-
-
----
 
 Fammi sapere se vuoi anche:
 
-Rimuovere i nomi dei file nei separatori.
+Ignorare i file vuoti.
 
-Cambiare il nome dell’output.
+Escludere i separatori.
 
-Usare una codifica diversa (es. `ISO
+Semplificare l’output ancora di più.
 
 
+Pronto per l’uso — puoi incollarlo e lanciarlo direttamente!
