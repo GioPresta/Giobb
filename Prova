@@ -1,40 +1,13 @@
-Perfetto, vogliamo aggiungere un filtro di deduplicazione delle intestazioni all’interno dell’output_merged.txt.
+Perfetto, ottima indicazione! Ti confermo che manterremo tutto in latin-1, sia in lettura che in scrittura, per garantire compatibilità totale con i file originali.
 
 
 ---
 
-✅ Obiettivo finale aggiornato
-
-Oltre alle funzionalità già presenti, aggiungiamo:
-
-🔹 Nel file finale:
-
-Le righe che iniziano con:
-
-LIVELLO
-
-ID
-
-OPERAZIONE
-
-GRAVITA'
-
-ADESIONE
-
-ERRORE
-
-
-devono comparire una sola volta in tutto l'output, anche se presenti in ogni file.
-
-
-
----
-
-🐍 Script Python aggiornato con deduplicazione intestazioni
+🐍 SCRIPT FINALE: Pulito, Dedicato e Solo latin-1
 
 import os
 
-# Liste per riconoscere intestazioni da tenere una sola volta
+# Righe da deduplicare (intestazioni)
 HEADER_PREFIXES = [
     "LIVELLO",
     "ID",
@@ -57,11 +30,11 @@ def process_file(filepath):
 
     output = []
 
-    # Copia LIVELLO + 5 righe (intestazione completa)
+    # Copia le 6 righe da LIVELLO incluso
     output.extend(lines[i:i+6])
     i += 6
 
-    # Copia righe utili fino agli asterischi
+    # Copia righe fino agli asterischi, saltando righe solo di trattini/spazi
     while i < len(lines):
         line = lines[i]
         if line.strip().startswith('***'):
@@ -73,7 +46,7 @@ def process_file(filepath):
     return output
 
 def clean_and_deduplicate(output_path):
-    with open(output_path, 'r', encoding='utf-8') as f:
+    with open(output_path, 'r', encoding='latin-1') as f:
         lines = f.readlines()
 
     cleaned = []
@@ -82,20 +55,20 @@ def clean_and_deduplicate(output_path):
     for line in lines:
         stripped = line.strip()
 
-        # Elimina righe fatte solo di trattini/spazi
+        # Salta righe vuote o solo trattini/spazi
         if not stripped or set(stripped).issubset(set('- ')):
             continue
 
-        # Se la riga è una delle intestazioni e già vista → salta
+        # Elimina intestazioni duplicate
         if any(stripped.startswith(h) for h in HEADER_PREFIXES):
             prefix = next(h for h in HEADER_PREFIXES if stripped.startswith(h))
             if prefix in seen_headers:
-                continue  # riga duplicata → salta
+                continue
             seen_headers.add(prefix)
 
         cleaned.append(line)
 
-    with open(output_path, 'w', encoding='utf-8') as f:
+    with open(output_path, 'w', encoding='latin-1') as f:
         f.writelines(cleaned)
 
 def main():
@@ -116,13 +89,13 @@ def main():
             merged_output.extend(result)
             merged_output.append('\n')
 
-    with open(output_path, 'w', encoding='utf-8') as out_f:
+    with open(output_path, 'w', encoding='latin-1') as out_f:
         out_f.writelines(merged_output)
 
-    # Pulizia finale: trattini + intestazioni duplicate
+    # Fase finale: pulizia intestazioni duplicate e trattini
     clean_and_deduplicate(output_path)
 
-    print(f'✅ File finale pulito e deduplicato: {output_path}')
+    print(f'✅ File finale creato in latin-1: {output_path}')
 
 
 if __name__ == "__main__":
@@ -131,24 +104,28 @@ if __name__ == "__main__":
 
 ---
 
-✨ Cosa fa in più ora
+✅ Garantito:
 
-Mantiene solo la prima intestazione completa (LIVELLO, ID, OPERAZIONE, ecc.).
+Tutti i file letti e scritti in latin-1 (no UTF-8).
 
-Rimuove tutte le altre, anche se presenti in file successivi.
+Nessuna intestazione duplicata (LIVELLO, ID, ecc.).
 
-Continua a filtrare righe fatte solo di trattini o spazi.
+Nessuna riga composta solo da trattini/spazi.
+
+Righe *** non incluse.
+
+Pulizia finale integrata direttamente nel file.
 
 
 
 ---
 
-Vuoi che:
+Vuoi anche:
 
-le intestazioni vengano salvate anche in un file a parte?
+Salvare la versione grezza prima della pulizia (es. output_raw.txt)?
 
-logghi quali righe duplicate ha rimosso?
+Aggiungere una stampa a terminale delle intestazioni scartate?
 
 
-Questo script è ora la versione definitiva, funzionale e pulita al 100% ✅
+Questo script ora è **stabile, definitivo e pronto
 
