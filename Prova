@@ -1,9 +1,38 @@
-Certo! Ecco lo script completo aggiornato che usa encoding='latin-1' per leggere correttamente i file .txt, evitando l’errore di decodifica:
+Perfetto! Ecco lo script aggiornato in base alle tue nuove istruzioni:
 
 
 ---
 
-🐍 Script Python aggiornato (usa latin-1)
+✅ Cosa fa ora lo script
+
+1. Non inserisce più la riga --- FILE: nomefile.txt ---.
+
+
+2. Per il primo file:
+
+Cerca la riga con LIVELLO.
+
+Estrae quella e le 5 successive.
+
+Salta le 4 righe dopo (totale salto: 10 righe compreso LIVELLO).
+
+Poi copia tutto fino alla prima riga con *********, escludendo eventuali righe solo di trattini (-------).
+
+
+
+3. Per i file successivi:
+
+Salta le prime 10 righe totali (come sopra, includendo LIVELLO e le 4 da skippare).
+
+Poi copia tutto fino agli asterischi, ignorando trattini.
+
+
+
+
+
+---
+
+🐍 Script Python finale
 
 import os
 
@@ -15,29 +44,30 @@ def process_file(filepath, include_header):
     i = 0
     found_header = False
 
-    # Cerca la riga con "LIVELLO"
+    # Trova la riga con "LIVELLO"
     while i < len(raw_lines):
         if 'LIVELLO' in raw_lines[i]:
             found_header = True
             break
         i += 1
 
-    if found_header:
-        header_start = i
-        header_end = i + 6  # 6 righe totali: LIVELLO + 5
-        if include_header:
-            output.extend(raw_lines[header_start:header_end])
-        i = header_end + 4  # salta 4 righe dopo
-    else:
-        return []  # File non valido o struttura diversa
+    if not found_header:
+        return []
 
-    # Estrai righe fino agli asterischi
+    header_start = i
+    header_end = header_start + 6  # LIVELLO + 5
+    data_start = header_end + 4    # skip 4 righe dopo intestazione
+
+    if include_header:
+        output.extend(raw_lines[header_start:header_end])
+
+    # Estrai righe dati dopo salto iniziale
+    i = data_start
     while i < len(raw_lines):
         line = raw_lines[i]
         if line.strip().startswith('***'):
             break
-        # Salta riga se fatta solo di trattini
-        if not set(line.strip()).issubset(set('-')):
+        if not set(line.strip()).issubset(set('-')):  # salta righe di trattini
             output.append(line)
         i += 1
 
@@ -52,10 +82,9 @@ def main():
     merged_output = []
     for idx, filename in enumerate(txt_files):
         filepath = os.path.join(current_dir, filename)
-        include_header = idx == 0  # Solo il primo file ha intestazione
+        include_header = idx == 0
         result = process_file(filepath, include_header)
         if result:
-            merged_output.append(f'--- FILE: {filename} ---\n')
             merged_output.extend(result)
             merged_output.append('\n')
 
@@ -72,24 +101,23 @@ if __name__ == "__main__":
 
 ---
 
-📂 Output
+📌 Cosa contiene output_merged.txt
 
-Il file output_merged.txt conterrà:
+Una sola intestazione (dal primo file).
 
-L’intestazione LIVELLO + 5 righe solo dal primo file.
+Nessun nome file nel testo.
 
-I dati utili da tutti i file (ignorando trattini e fermandosi agli asterischi).
-
-Separatore --- FILE: nomefile.txt --- tra ogni blocco.
+Tutti i dati estratti coerentemente, rispettando la tua logica.
 
 
-Fammi sapere se vuoi anche:
+Fammi sapere se vuoi:
 
-Ignorare i file vuoti.
+Includere anche gli asterischi come punto finale.
 
-Escludere i separatori.
+Una versione .exe.
 
-Semplificare l’output ancora di più.
+Scrivere direttamente su un file .csv.
 
 
-Pronto per l’uso — puoi incollarlo e lanciarlo direttamente!
+Pronto all’uso!
+
