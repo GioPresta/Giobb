@@ -1,132 +1,105 @@
-Perfetto! Vuoi che lo script:
+Perfetto! Ecco uno script Python completo che:
 
-✅ Prenda i .txt dalla stessa cartella dove si trova lo script stesso
+Legge tutti i file .txt nella stessa directory in cui si trova lo script.
 
-✅ Salvi riepilogo.txt e riepilogo.csv nella stessa cartella
+Applica la logica che hai definito.
 
-❌ Non richieda nessun percorso da scrivere a mano
+Scrive il risultato in un file chiamato output_merged.txt nella stessa directory.
 
-
-Ottimo. Ecco la versione finale e autonoma dello script:
 
 
 ---
 
-🧾 Codice Python definitivo – tutto automatico
+🐍 Script Python
 
 import os
-import re
-import csv
 
-# 📂 Cartella dove si trova lo script stesso
-cartella_input = os.path.dirname(os.path.abspath(__file__))
+def process_file(filepath, include_header):
+    lines = []
+    with open(filepath, 'r', encoding='utf-8') as f:
+        raw_lines = f.readlines()
 
-# Pattern riconoscimento struttura file
-inizio_intestazione = re.compile(r'\bLIVELLO\b', re.IGNORECASE)
-riga_asterischi = re.compile(r'^\*{5,}$')
-riga_decorativa = re.compile(r'^[-\s]{10,}$')
+    output = []
+    i = 0
+    found_header = False
 
-header_lines = []
-righe_dati = []
-intestazione_salvata = False
-
-def apri_file(path):
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            return f.readlines()
-    except UnicodeDecodeError:
-        with open(path, 'r', encoding='latin1') as f:
-            return f.readlines()
-
-# Elenco dei .txt nella cartella dello script
-file_txt = [f for f in os.listdir(cartella_input) if f.endswith('.txt') and not f.startswith('riepilogo')]
-
-if not file_txt:
-    print("❌ Nessun file .txt trovato nella cartella:", cartella_input)
-    exit()
-
-for nome_file in file_txt:
-    percorso_file = os.path.join(cartella_input, nome_file)
-    lines = apri_file(percorso_file)
-
-    start_index = None
-    for i, line in enumerate(lines):
-        if inizio_intestazione.search(line.strip()):
-            start_index = i
+    # Cerca riga con LIVELLO
+    while i < len(raw_lines):
+        if 'LIVELLO' in raw_lines[i]:
+            found_header = True
             break
+        i += 1
+
+    if found_header:
+        header_start = i
+        header_end = i + 6  # inclusa la riga LIVELLO
+        if include_header:
+            output.extend(raw_lines[header_start:header_end])
+        i = header_end + 4  # salta 4 righe dopo l'intestazione
     else:
-        continue  # se non trova "LIVELLO", salta il file
+        return []  # File non valido
 
-    # Salva una sola volta le 6 righe di intestazione
-    if not intestazione_salvata:
-        header_lines = [lines[start_index + j].rstrip('\n') for j in range(6)]
-        intestazione_salvata = True
-
-    # Salta 4 righe decorative dopo intestazione
-    index = start_index + 10
-
-    # Raccoglie i dati (righe tra trattini e asterischi)
-    for line in lines[index:]:
-        riga = line.strip()
-        if riga_asterischi.match(riga):
+    # Estrai le righe fino agli asterischi
+    while i < len(raw_lines):
+        line = raw_lines[i]
+        if line.strip().startswith('***'):
             break
-        if riga:
-            righe_dati.append(riga)
+        if not set(line.strip()).issubset(set('-')):  # salta i trattini
+            output.append(line)
+        i += 1
 
-# Combina verticalmente le 6 righe di intestazione in colonne CSV
-def crea_colonne_da_header(righe):
-    split = [re.split(r'\s{2,}', r.strip()) for r in righe]
-    max_col = max(len(r) for r in split)
-    for r in split:
-        while len(r) < max_col:
-            r.append('')
-    return [' '.join(col).strip() for col in zip(*split)]
+    return output
 
-final_headers = crea_colonne_da_header(header_lines)
 
-# Salva riepilogo.txt
-path_txt = os.path.join(cartella_input, 'riepilogo.txt')
-with open(path_txt, 'w', encoding='utf-8') as f:
-    for r in header_lines:
-        f.write(r + '\n')
-    for r in righe_dati:
-        f.write(r + '\n')
+def main():
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    txt_files = [f for f in os.listdir(current_dir) if f.endswith('.txt')]
+    txt_files.sort()  # per processarli in ordine
 
-# Salva riepilogo.csv
-path_csv = os.path.join(cartella_input, 'riepilogo.csv')
-with open(path_csv, 'w', encoding='utf-8', newline='') as f:
-    writer = csv.writer(f, delimiter=';')
-    writer.writerow(final_headers)
-    for r in righe_dati:
-        valori = re.split(r'\s{2,}', r.strip())
-        writer.writerow(valori)
+    merged_output = []
+    for idx, filename in enumerate(txt_files):
+        filepath = os.path.join(current_dir, filename)
+        include_header = idx == 0  # solo per il primo file
+        result = process_file(filepath, include_header)
+        if result:
+            merged_output.append(f'--- FILE: {filename} ---\n')
+            merged_output.extend(result)
+            merged_output.append('\n')
 
-print(f"✅ Fatti! File letti: {len(file_txt)}")
-print(f"📄 Contratti totali estratti: {len(righe_dati)}")
-print(f"📝 Salvati in: {path_txt}")
-print(f"📊 Salvati in: {path_csv}")
+    output_path = os.path.join(current_dir, 'output_merged.txt')
+    with open(output_path, 'w', encoding='utf-8') as out_f:
+        out_f.writelines(merged_output)
+
+    print(f'✅ File creato: {output_path}')
+
+
+if __name__ == "__main__":
+    main()
 
 
 ---
 
-✅ Ora fa tutto da solo
+📌 Dettagli
 
-Nessun percorso da scrivere
+Il file output_merged.txt conterrà:
 
-Basta mettere lo script .py insieme ai file .txt
+L’intestazione (LIVELLO e 5 righe sotto) una sola volta (dal primo file).
 
-Eseguire lo script → crea riepilogo.txt e riepilogo.csv nella stessa cartella
+I dati utili di tutti i file (saltando trattini e fermandosi agli asterischi).
+
+Un separatore --- FILE: nomefile.txt --- prima di ogni blocco.
+
 
 
 
 ---
 
-Se vuoi anche:
+Fammi sapere se vuoi anche:
 
-aprire il file automaticamente dopo la creazione
+Rimuovere i nomi dei file nei separatori.
 
-aggiungere il nome del file origine come colonna
+Cambiare il nome dell’output.
 
+Usare una codifica diversa (es. `ISO
 
-…posso aggiungerlo al volo. Ma così sei operativo al 100%.
 
