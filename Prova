@@ -1,49 +1,61 @@
-Perfetto! Ora ti propongo la versione definitiva dello script, con tutti i requisiti integrati, inclusa l’ultima condizione:
+Perfetto, grazie per la chiarificazione definitiva! Ecco esattamente quello che va fatto:
 
 
 ---
 
-✅ Requisiti finali implementati
+✅ Regole Finali Corrette
 
-1. Una sola volta: le prime 6 righe da LIVELLO (intestazione) vanno prese solo dal primo file.
+🔹 Primo file:
 
-
-2. Dagli altri file: le righe con LIVELLO e le 5 successive vanno saltate.
-
-
-3. Dopo quelle 6 righe:
-
-Salta 4 righe.
-
-Poi salva tutto fino alla riga che inizia con ***.
-
-Escludi righe fatte solo di trattini (-------).
+1. Trova la riga con LIVELLO.
 
 
+2. Copia quella riga e le 5 successive → totale 6 righe di intestazione.
 
-4. Non includere righe con ***.
 
+3. Poi:
 
-5. Ignora output_merged.txt se già presente nella cartella.
+Copia tutto da lì fino alla riga che inizia con ***.
+
+Escludi qualsiasi riga contenente solo trattini (---- etc).
+
 
 
 
 
 ---
 
-🐍 Script Python completo
+🔹 File successivi:
+
+1. Trova la riga con LIVELLO.
+
+
+2. Salta quella riga e le 5 successive → quindi salta 6 righe totali.
+
+
+3. Poi:
+
+Copia tutto da lì fino alla riga che inizia con ***.
+
+Escludi qualsiasi riga fatta solo di trattini.
+
+
+
+
+
+---
+
+🐍 SCRIPT FINALE CORRETTO
 
 import os
 
-def process_file(filepath, include_header=False):
+def process_file(filepath, include_header):
     with open(filepath, 'r', encoding='latin-1') as f:
         lines = f.readlines()
 
     i = 0
-    # Trova la riga con "LIVELLO"
-    while i < len(lines):
-        if 'LIVELLO' in lines[i]:
-            break
+    # Trova riga con "LIVELLO"
+    while i < len(lines) and 'LIVELLO' not in lines[i]:
         i += 1
 
     if i >= len(lines):
@@ -52,16 +64,20 @@ def process_file(filepath, include_header=False):
     output = []
 
     if include_header:
-        output.extend(lines[i:i+6])  # Prendi le 6 righe di intestazione
+        # PRIMO FILE: salva LIVELLO + 5 righe dopo
+        output.extend(lines[i:i+6])
+        i += 6  # vai alla riga successiva
+    else:
+        # FILE SUCCESSIVI: skippa LIVELLO + 5 righe
+        i += 6
 
-    i += 10  # Salta 6 righe (LIVELLO + 5) + 4 righe successive
-
-    # Estrai righe fino agli asterischi, escludendo trattini
+    # Ora copia tutto fino agli asterischi
     while i < len(lines):
         line = lines[i]
         if line.strip().startswith('***'):
             break
-        if not set(line.strip()).issubset(set('-')):  # Salta trattini
+        # Salta le righe fatte solo di trattini
+        if not set(line.strip()).issubset(set('-')):
             output.append(line)
         i += 1
 
@@ -73,20 +89,19 @@ def main():
     output_filename = 'output_merged.txt'
     output_path = os.path.join(current_dir, output_filename)
 
-    txt_files = [
+    txt_files = sorted([
         f for f in os.listdir(current_dir)
         if f.endswith('.txt') and f != output_filename
-    ]
-    txt_files.sort()
+    ])
 
     merged_output = []
     for idx, filename in enumerate(txt_files):
         filepath = os.path.join(current_dir, filename)
-        include_header = (idx == 0)  # Solo per il primo file
+        include_header = (idx == 0)  # solo nel primo file si copia LIVELLO + 5 righe
         result = process_file(filepath, include_header=include_header)
         if result:
             merged_output.extend(result)
-            merged_output.append('\n')
+            merged_output.append('\n')  # separatore tra blocchi
 
     with open(output_path, 'w', encoding='utf-8') as out_f:
         out_f.writelines(merged_output)
@@ -100,13 +115,11 @@ if __name__ == "__main__":
 
 ---
 
-📝 Output
+📝 Riepilogo comportamento
 
-output_merged.txt con:
+Azione	Primo file	File successivi
 
-intestazione LIVELLO + 5 righe una sola volta (dal primo file)
-
-blocchi di dati da tutti i
-
+Copia riga LIVELLO	✅	❌ (la salta)
+Copia 5 rig		
 
 
