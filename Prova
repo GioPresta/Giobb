@@ -1,30 +1,31 @@
-Perfetto! Ecco lo script aggiornato in base alle tue nuove istruzioni:
+Perfetto, ripartiamo da capo e fissiamo la logica definitiva con chiarezza.
 
 
 ---
 
-✅ Cosa fa ora lo script
+✅ Obiettivo del nuovo script
 
-1. Non inserisce più la riga --- FILE: nomefile.txt ---.
-
-
-2. Per il primo file:
-
-Cerca la riga con LIVELLO.
-
-Estrae quella e le 5 successive.
-
-Salta le 4 righe dopo (totale salto: 10 righe compreso LIVELLO).
-
-Poi copia tutto fino alla prima riga con *********, escludendo eventuali righe solo di trattini (-------).
+Vogliamo unire più file .txt, salvando solo i dati rilevanti in modo coerente, secondo questa logica:
 
 
+---
 
-3. Per i file successivi:
+🔹 Primo file:
 
-Salta le prime 10 righe totali (come sopra, includendo LIVELLO e le 4 da skippare).
+1. Trova la riga con LIVELLO.
 
-Poi copia tutto fino agli asterischi, ignorando trattini.
+
+2. Estrai 6 righe totali, da LIVELLO fino alla quinta riga dopo.
+
+
+3. Salta 4 righe.
+
+
+4. Poi:
+
+Copia tutte le righe fino a una riga che inizia con *** (asterischi).
+
+Includi righe fatte di trattini se ci sono, come da tua richiesta.
 
 
 
@@ -32,43 +33,60 @@ Poi copia tutto fino agli asterischi, ignorando trattini.
 
 ---
 
-🐍 Script Python finale
+🔹 File successivi:
+
+1. Trova la riga con LIVELLO.
+
+
+2. Salta 10 righe a partire da lì (quindi LIVELLO + 5 righe + 4 righe di skip).
+
+
+3. Poi:
+
+Copia tutte le righe fino a una riga che inizia con *** (asterischi).
+
+Anche qui: non escludere righe con trattini — vanno mantenute.
+
+
+
+
+
+---
+
+🐍 Script Python Finale
 
 import os
 
 def process_file(filepath, include_header):
     with open(filepath, 'r', encoding='latin-1') as f:
-        raw_lines = f.readlines()
+        lines = f.readlines()
 
     output = []
     i = 0
-    found_header = False
 
     # Trova la riga con "LIVELLO"
-    while i < len(raw_lines):
-        if 'LIVELLO' in raw_lines[i]:
-            found_header = True
+    while i < len(lines):
+        if 'LIVELLO' in lines[i]:
             break
         i += 1
 
-    if not found_header:
-        return []
-
-    header_start = i
-    header_end = header_start + 6  # LIVELLO + 5
-    data_start = header_end + 4    # skip 4 righe dopo intestazione
+    if i >= len(lines):
+        return []  # LIVELLO non trovato
 
     if include_header:
-        output.extend(raw_lines[header_start:header_end])
+        # Primo file: prendi 6 righe da LIVELLO, salta 4, poi copia
+        header = lines[i:i+6]
+        output.extend(header)
+        i += 10  # 6 righe + 4 righe di skip
+    else:
+        # File successivi: salta 10 righe da LIVELLO compreso
+        i += 10
 
-    # Estrai righe dati dopo salto iniziale
-    i = data_start
-    while i < len(raw_lines):
-        line = raw_lines[i]
-        if line.strip().startswith('***'):
+    # Copia tutto fino alla riga che inizia con asterischi
+    while i < len(lines):
+        if lines[i].strip().startswith('***'):
             break
-        if not set(line.strip()).issubset(set('-')):  # salta righe di trattini
-            output.append(line)
+        output.append(lines[i])
         i += 1
 
     return output
@@ -82,17 +100,17 @@ def main():
     merged_output = []
     for idx, filename in enumerate(txt_files):
         filepath = os.path.join(current_dir, filename)
-        include_header = idx == 0
+        include_header = (idx == 0)
         result = process_file(filepath, include_header)
         if result:
             merged_output.extend(result)
-            merged_output.append('\n')
+            merged_output.append('\n')  # Separatore vuoto tra file
 
     output_path = os.path.join(current_dir, 'output_merged.txt')
     with open(output_path, 'w', encoding='utf-8') as out_f:
         out_f.writelines(merged_output)
 
-    print(f'✅ File creato: {output_path}')
+    print(f'✅ File creato correttamente: {output_path}')
 
 
 if __name__ == "__main__":
@@ -101,23 +119,25 @@ if __name__ == "__main__":
 
 ---
 
-📌 Cosa contiene output_merged.txt
+📂 Output finale
 
-Una sola intestazione (dal primo file).
+File output_merged.txt nella stessa directory dello script.
 
-Nessun nome file nel testo.
+Solo l’intestazione del primo file.
 
-Tutti i dati estratti coerentemente, rispettando la tua logica.
+Tutti i dati rilevanti dei file successivi coerenti.
 
+Nessun nome file, nessuna intestazione superflua.
 
-Fammi sapere se vuoi:
-
-Includere anche gli asterischi come punto finale.
-
-Una versione .exe.
-
-Scrivere direttamente su un file .csv.
+Nessun filtro sui trattini: vengono mantenuti.
 
 
-Pronto all’uso!
+Fammi sapere se:
+
+Vuoi includere anche la riga degli asterischi come “fine blocco”.
+
+Vuoi esportarlo anche in .csv o .xlsx.
+
+
+Pronto per essere usato così com’è!
 
