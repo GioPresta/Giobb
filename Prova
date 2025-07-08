@@ -1,13 +1,45 @@
-Perfetto, ottima indicazione! Ti confermo che manterremo tutto in latin-1, sia in lettura che in scrittura, per garantire compatibilità totale con i file originali.
+Perfetto! Ecco lo script finale completo, con tutte le logiche implementate e con l’output finale salvato come Riepilogo.txt.
 
 
 ---
 
-🐍 SCRIPT FINALE: Pulito, Dedicato e Solo latin-1
+✅ Funzionalità dello script
+
+1. Legge tutti i file .txt nella cartella.
+
+
+2. Per ogni file:
+
+Trova LIVELLO, copia quella riga e le 5 successive (6 righe totali).
+
+Copia tutte le righe fino agli ***, escludendo righe fatte solo di trattini/spazi.
+
+
+
+3. Deduplica le intestazioni (LIVELLO, ID, OPERAZIONE, GRAVITA', ADESIONE, ERRORE) → solo una volta.
+
+
+4. Elimina tutte le righe composte solo da trattini o spazi.
+
+
+5. Alla fine, elimina le prime 3 righe del file finale.
+
+
+6. Tutto in latin-1, nessuna conversione in UTF-8.
+
+
+7. Output in un file chiamato Riepilogo.txt.
+
+
+
+
+---
+
+🐍 SCRIPT DEFINITIVO
 
 import os
 
-# Righe da deduplicare (intestazioni)
+# Intestazioni da deduplicare
 HEADER_PREFIXES = [
     "LIVELLO",
     "ID",
@@ -30,11 +62,11 @@ def process_file(filepath):
 
     output = []
 
-    # Copia le 6 righe da LIVELLO incluso
+    # Copia le 6 righe da "LIVELLO" incluso
     output.extend(lines[i:i+6])
     i += 6
 
-    # Copia righe fino agli asterischi, saltando righe solo di trattini/spazi
+    # Copia tutto fino agli asterischi, saltando righe solo di trattini/spazi
     while i < len(lines):
         line = lines[i]
         if line.strip().startswith('***'):
@@ -59,7 +91,7 @@ def clean_and_deduplicate(output_path):
         if not stripped or set(stripped).issubset(set('- ')):
             continue
 
-        # Elimina intestazioni duplicate
+        # Deduplica intestazioni
         if any(stripped.startswith(h) for h in HEADER_PREFIXES):
             prefix = next(h for h in HEADER_PREFIXES if stripped.startswith(h))
             if prefix in seen_headers:
@@ -68,12 +100,15 @@ def clean_and_deduplicate(output_path):
 
         cleaned.append(line)
 
+    # Elimina le prime 3 righe dal risultato finale
+    cleaned = cleaned[3:]
+
     with open(output_path, 'w', encoding='latin-1') as f:
         f.writelines(cleaned)
 
 def main():
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    output_filename = 'output_merged.txt'
+    output_filename = 'Riepilogo.txt'
     output_path = os.path.join(current_dir, output_filename)
 
     txt_files = sorted([
@@ -87,15 +122,14 @@ def main():
         result = process_file(filepath)
         if result:
             merged_output.extend(result)
-            merged_output.append('\n')
+            merged_output.append('\n')  # separatore tra blocchi
 
     with open(output_path, 'w', encoding='latin-1') as out_f:
         out_f.writelines(merged_output)
 
-    # Fase finale: pulizia intestazioni duplicate e trattini
     clean_and_deduplicate(output_path)
 
-    print(f'✅ File finale creato in latin-1: {output_path}')
+    print(f'✅ File finale creato: {output_path}')
 
 
 if __name__ == "__main__":
@@ -104,28 +138,14 @@ if __name__ == "__main__":
 
 ---
 
-✅ Garantito:
+📄 Output finale: Riepilogo.txt
 
-Tutti i file letti e scritti in latin-1 (no UTF-8).
+Contiene:
 
-Nessuna intestazione duplicata (LIVELLO, ID, ecc.).
+le intestazioni (una sola volta),
 
-Nessuna riga composta solo da trattini/spazi.
+tutti i dati rilevanti dei file,
 
-Righe *** non incluse.
+nessuna r
 
-Pulizia finale integrata direttamente nel file.
-
-
-
----
-
-Vuoi anche:
-
-Salvare la versione grezza prima della pulizia (es. output_raw.txt)?
-
-Aggiungere una stampa a terminale delle intestazioni scartate?
-
-
-Questo script ora è **stabile, definitivo e pronto
 
