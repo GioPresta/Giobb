@@ -1,45 +1,60 @@
-Eccoti lo script completo, corretto e definitivo, con:
+Perfetto! Hai le idee chiarissime 👌
 
 
 ---
 
-✅ Caratteristiche finali:
+🎯 Obiettivo finale aggiornato
 
-Legge tutti i file .txt nella cartella
+Vuoi nel file finale:
 
-Estrae solo il blocco da LIVELLO fino alla riga di asterischi (*****)
-
-Rimuove righe decorative (----, ====, ecc.)
-
-Scrive:
-
-un file riepilogo.txt
-
-un file riepilogo.csv leggibile da Excel
+Solo queste 5 colonne, in questo ordine preciso:
 
 
-✅ Scrive una sola volta l’intestazione (es. Gravità  Oggetto  Errore)
+POLIZZA | ADESIONE | EFFETTO | ERRORE | SITUAZIONE
 
-Anche se l’intestazione si ripete nei contenuti degli altri file
+Dove:
+
+Le prime 4 colonne vengono estratte dai dati reali
+
+La colonna SITUAZIONE viene sempre aggiunta vuota come ultima colonna (per annotazioni future)
 
 
 
 
 ---
 
-🧾 Codice completo (non richiede librerie esterne)
+✅ Modifica al codice: forziamo la colonna SITUAZIONE come vuota
+
+Ti lascio qui lo script completo e finale, aggiornato con:
+
+colonna SITUAZIONE sempre presente
+
+riempita con stringa vuota '' per ogni riga
+
+nessuna dipendenza esterna (genera sia .txt che .csv leggibile da Excel)
+
+
+
+---
+
+🧾 Codice Python completo
 
 import os
 import re
 import csv
 
-# Regex per struttura file batch
-END_SECTION_PATTERN = re.compile(r'^\s*\*{5,}\s*$')                # *****...
-DECORATION_PATTERN = re.compile(r'^[\s\-\*=_\.]{4,}$')             # ----, ====
-START_HEADER_PATTERN = re.compile(r'^\s*LIVELLO\b', re.IGNORECASE) # Inizio sezione
+# Regex di struttura
+END_SECTION_PATTERN = re.compile(r'^\s*\*{5,}\s*$')
+DECORATION_PATTERN = re.compile(r'^[\s\-\*=_\.]{4,}$')
+START_HEADER_PATTERN = re.compile(r'^\s*LIVELLO\b', re.IGNORECASE)
+
+# Colonne richieste in ordine
+KEEP_COLUMNS = ['POLIZZA', 'ADESIONE', 'EFFETTO', 'ERRORE']
+
+# Aggiungiamo sempre "SITUAZIONE" vuoto in fondo
+FINAL_COLUMNS = KEEP_COLUMNS + ['SITUAZIONE']
 
 def extract_section(file_path):
-    """Estrae intestazione + righe dati da un file .txt"""
     with open(file_path, 'r', encoding='latin1') as f:
         in_section = False
         header = None
@@ -61,18 +76,26 @@ def extract_section(file_path):
         return header, content
 
 
-def write_csv_file(header_line, data_lines, output_csv='riepilogo.csv'):
-    """Scrive i dati estratti in un file CSV compatibile con Excel"""
+def filter_columns(header_line, data_lines):
+    split_header = re.split(r'\s{2,}', header_line.strip())
+    col_indices = [i for i, col in enumerate(split_header) if col.upper() in KEEP_COLUMNS]
+    selected_headers = [split_header[i] for i in col_indices]
+
+    filtered_data = []
+    for line in data_lines:
+        fields = re.split(r'\s{2,}', line.strip())
+        selected_fields = [fields[i] if i < len(fields) else '' for i in col_indices]
+        selected_fields.append('')  # aggiunge colonna vuota SITUAZIONE
+        filtered_data.append(selected_fields)
+
+    return FINAL_COLUMNS, filtered_data
+
+
+def write_csv_file(headers, data, output_csv='riepilogo.csv'):
     with open(output_csv, 'w', encoding='utf-8', newline='') as f:
         writer = csv.writer(f, delimiter=';')
-
-        headers = re.split(r'\s{2,}', header_line.strip())
         writer.writerow(headers)
-
-        for line in data_lines:
-            values = re.split(r'\s{2,}', line.strip())
-            writer.writerow(values)
-
+        writer.writerows(data)
     print(f"📄 CSV generato: {output_csv}")
 
 
@@ -81,35 +104,34 @@ def merge_all_reports(output_txt='riepilogo.txt', output_csv='riepilogo.csv'):
     txt_files = [f for f in os.listdir(current_dir)
                  if f.endswith('.txt') and f != output_txt]
 
-    merged_content = []
+    merged_data = []
     saved_header = None
 
     for txt_file in txt_files:
         file_path = os.path.join(current_dir, txt_file)
         header, content = extract_section(file_path)
 
-        if saved_header is None and header:
+        if header and saved_header is None:
             saved_header = header.strip()
 
-        # Elimina intestazioni duplicate nei contenuti successivi
-        filtered_content = [
-            line for line in content
-            if saved_header is None or line.strip() != saved_header
-        ]
+        if content:
+            merged_data.extend(content)
 
-        merged_content.extend(filtered_content)
-
-    # Scrittura file di testo
-    with open(output_txt, 'w', encoding='utf-8') as out:
-        if saved_header:
-            out.write(saved_header + '\n')
-        out.write('\n'.join(merged_content))
-        out.write('\n')
-    print(f"📝 File di testo generato: {output_txt}")
-
-    # Scrittura file CSV
+    # Applichiamo il filtro colonne
     if saved_header:
-        write_csv_file(saved_header, merged_content, output_csv)
+        filtered_headers, filtered_data = filter_columns(saved_header, merged_data)
+    else:
+        filtered_headers, filtered_data = FINAL_COLUMNS, []
+
+    # Scrivi TXT
+    with open(output_txt, 'w', encoding='utf-8') as out:
+        out.write('  '.join(filtered_headers) + '\n')
+        for row in filtered_data:
+            out.write('  '.join(row) + '\n')
+    print(f"📝 File testo generato: {output_txt}")
+
+    # Scrivi CSV
+    write_csv_file(filtered_headers, filtered_data, output_csv)
 
 
 if __name__ == "__main__":
@@ -118,27 +140,25 @@ if __name__ == "__main__":
 
 ---
 
-📂 Come usarlo
+✅ Esempio di riepilogo.csv
 
-1. Salva il file come merge_batch_reports.py
+POLIZZA	ADESIONE	EFFETTO	ERRORE	SITUAZIONE
 
+001234	A01	2025-07	RuntimeException	
+001235	A02	2025-07	NullPointerException	
 
-2. Mettilo nella stessa cartella dei .txt
-
-
-3. Apri il terminale in quella cartella
-
-
-4. Esegui:
-
-
-
-python merge_batch_reports.py
 
 
 ---
 
-🟢 Risultato:
+Fammi sapere se vuoi:
 
-✅ riepilogo.txt: testo pulito, una
+che SITUAZIONE venga precompilata con qualcosa (es: "DA VERIFICARE")
+
+aggiungere un filtro per tipo errore
+
+esportare anche in .xlsx
+
+
+Pronto a fartelo in pochi secondi!
 
