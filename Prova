@@ -1,40 +1,32 @@
-Perfetto! Quello che vuoi ottenere ora è:
+Perfetto, ripartiamo da zero come richiesto, tornando alla versione che:
 
 
 ---
 
-✅ Logica definitiva aggiornata
+✅ Logica di Estrazione Richiesta (versione originale)
 
-Per ogni file .txt:
+Per ogni file .txt, applicare sempre la stessa logica:
 
-1. Trova la riga con LIVELLO.
-
-
-2. Salta le 6 righe da LIVELLO incluso.
+1. Trova la riga che contiene LIVELLO.
 
 
-3. Salta anche le 4 righe successive.
+2. Copia quella riga e le 5 successive (totale: 6 righe).
 
 
-4. Poi:
-
-Salva tutto fino alla riga che inizia con ***.
-
-Ignora tutte le righe fatte solo di trattini (es. ------).
+3. Poi copia tutte le righe successive fino alla prima che inizia con ***.
 
 
+4. Salta qualsiasi riga che è fatta solo di trattini (es. ----- o simili).
 
 
-> Nessuna riga di intestazione (LIVELLO) viene conservata.
-Nessun trattino viene salvato.
-Nessuna distinzione tra primo file e successivi.
+5. Non copiare la riga con ***.
 
 
 
 
 ---
 
-🐍 Script Python aggiornato
+🐍 SCRIPT Python - VERSIONE STABILE
 
 import os
 
@@ -44,23 +36,24 @@ def process_file(filepath):
 
     i = 0
     # Trova la riga con "LIVELLO"
-    while i < len(lines):
-        if 'LIVELLO' in lines[i]:
-            break
+    while i < len(lines) and 'LIVELLO' not in lines[i]:
         i += 1
 
     if i >= len(lines):
-        return []  # LIVELLO non trovato
+        return []  # Se non c'è LIVELLO, salta il file
 
-    # Salta: 6 righe (intestazione) + 4 righe successive = 10 righe totali
-    i += 10
     output = []
 
+    # Copia LIVELLO + 5 righe successive (6 righe in totale)
+    output.extend(lines[i:i+6])
+    i += 6
+
+    # Copia righe fino agli asterischi, saltando i trattini
     while i < len(lines):
         line = lines[i]
         if line.strip().startswith('***'):
             break
-        # Ignora riga fatta solo di trattini
+        # Salta righe fatte solo di trattini (es. "-----")
         if not set(line.strip()).issubset(set('-')):
             output.append(line)
         i += 1
@@ -73,11 +66,11 @@ def main():
     output_filename = 'output_merged.txt'
     output_path = os.path.join(current_dir, output_filename)
 
-    txt_files = [
+    # Elenco di tutti i file .txt tranne l’output
+    txt_files = sorted([
         f for f in os.listdir(current_dir)
         if f.endswith('.txt') and f != output_filename
-    ]
-    txt_files.sort()
+    ])
 
     merged_output = []
     for filename in txt_files:
@@ -85,12 +78,12 @@ def main():
         result = process_file(filepath)
         if result:
             merged_output.extend(result)
-            merged_output.append('\n')  # Separatore tra blocchi
+            merged_output.append('\n')  # separazione tra i file
 
     with open(output_path, 'w', encoding='utf-8') as out_f:
         out_f.writelines(merged_output)
 
-    print(f'✅ File creato correttamente: {output_path}')
+    print(f'✅ File unificato creato con successo: {output_path}')
 
 
 if __name__ == "__main__":
@@ -99,27 +92,28 @@ if __name__ == "__main__":
 
 ---
 
-✨ Riepilogo finale del comportamento
+📌 Cosa fa questo script
 
-Azione	Comportamento
+Fase	Azione
 
-Riga con LIVELLO	Salta, insieme alle 5 successive
-4 righe dopo LIVELLO	Saltate
-Righe con ------ (trattini)	Rimosse
-Righe fino a ***	Salvate (escluso ***)
-Riga ***	Ferma la copia (esclusa)
-File di output (output_merged.txt)	Ignorato nei cicli
+Riconoscimento LIVELLO	Sempre per ogni file
+Copia intestazione	6 righe da LIVELLO incluso
+Dati	Tutto sotto, fino a *** esclusa, saltando trattini
+Separazione	Una riga vuota tra file, nessuna intestazione o nome file
+Protezione	Se LIVELLO non c’è, il file viene ignorato senza errori
 
 
 
 ---
 
-Fammi sapere se vuoi anche:
+Fammi sapere se vuoi:
 
-loggare i file che non contengono LIVELLO
+Che includa la riga *** come fine blocco
 
-includere la riga di asterischi nel blocco salvato
+Che logghi a terminale i file processati
+
+Che rinomini l’output con timestamp
 
 
-Lo script ora è completamente coerente e pulito ✅
+Lo script ora è pronto, solido e coerente ✅
 
