@@ -1,32 +1,44 @@
-Perfetto! Ecco la versione dello script che legge i file da una cartella specifica (a tua scelta), ad esempio:
-
-C:/ReportBatch/
-
-
----
-
-✅ COSA CAMBIA
-
-Non prende i .txt dalla cartella dello script
-
-Ma da un percorso preciso che puoi modificare
-
-Tutto il resto resta uguale: 6 righe intestazione, 4 trattini ignorati, polizze lette, output in riepilogo.txt e riepilogo.csv
-
+Perfetto, adesso è chiarissimo:
+Vuoi che lo script principale legga automaticamente i file sia in UTF-8 che Latin-1, nel caso in cui uno dei due fallisca — senza messaggi diagnostici extra.
 
 
 ---
 
-🧾 SCRIPT COMPLETO – con percorso cartella personalizzato
+✅ Soluzione: apertura con fallback utf-8 → latin1
+
+Ti allego qui lo script completo e definitivo, aggiornato così:
+
+Legge i file prima in utf-8
+
+Se fallisce, li riapre in latin1
+
+Gestisce:
+
+6 righe di intestazione
+
+4 righe di trattini
+
+1+ righe di dati (contratti)
+
+chiusura con *****
+
+
+Genera riepilogo.txt e riepilogo.csv corretti
+
+
+
+---
+
+🧾 Codice completo con doppia codifica
 
 import os
 import re
 import csv
 
-# 🔁 IMPOSTA QUI IL PERCORSO DELLA CARTELLA DEI FILE
-cartella_input = r'C:/ReportBatch'  # <-- cambia questo percorso a piacere
+# Cartella contenente i file .txt
+cartella_input = r'C:/ReportBatch'  # <--- Cambia qui
 
-# Pattern riconoscimento struttura file
+# Pattern riconoscimento struttura
 inizio_intestazione = re.compile(r'\bLIVELLO\b', re.IGNORECASE)
 riga_asterischi = re.compile(r'^\*{5,}$')
 riga_decorativa = re.compile(r'^[-\s]{10,}$')
@@ -35,46 +47,52 @@ header_lines = []
 righe_dati = []
 intestazione_salvata = False
 
-# Elenco dei file txt nella cartella scelta
+# Funzione per leggere un file in utf-8 o latin1
+def apri_file(path):
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return f.readlines()
+    except UnicodeDecodeError:
+        with open(path, 'r', encoding='latin1') as f:
+            return f.readlines()
+
+# Legge tutti i file .txt
 file_txt = [f for f in os.listdir(cartella_input) if f.endswith('.txt') and not f.startswith('riepilogo')]
 
 if not file_txt:
-    print("❌ Nessun file .txt trovato nella cartella:", cartella_input)
+    print("❌ Nessun file .txt trovato in:", cartella_input)
     exit()
 
 for nome_file in file_txt:
     percorso_file = os.path.join(cartella_input, nome_file)
+    lines = apri_file(percorso_file)
 
-    with open(percorso_file, 'r', encoding='latin1') as f:
-        lines = f.readlines()
+    # Cerca riga con LIVELLO
+    start_index = None
+    for i, line in enumerate(lines):
+        if inizio_intestazione.search(line.strip()):
+            start_index = i
+            break
+    else:
+        continue  # se non trova LIVELLO, salta il file
 
-        # Trova riga con "LIVELLO"
-        start_index = None
-        for i, line in enumerate(lines):
-            if inizio_intestazione.search(line.strip()):
-                start_index = i
-                break
-        else:
-            print(f"⚠ 'LIVELLO' non trovato in {nome_file}")
-            continue
+    # Salva le 6 righe di intestazione (una volta sola)
+    if not intestazione_salvata:
+        header_lines = [lines[start_index + j].rstrip('\n') for j in range(6)]
+        intestazione_salvata = True
 
-        # Salva le 6 righe di intestazione (una volta sola)
-        if not intestazione_salvata:
-            header_lines = [lines[start_index + j].rstrip('\n') for j in range(6)]
-            intestazione_salvata = True
+    # Salta le 4 righe di trattini
+    index = start_index + 10
 
-        # Salta le 4 righe di trattini dopo l’intestazione
-        index = start_index + 10
+    # Legge le righe dati fino agli asterischi
+    for line in lines[index:]:
+        riga = line.strip()
+        if riga_asterischi.match(riga):
+            break
+        if riga:
+            righe_dati.append(riga)
 
-        # Legge i dati (fino agli asterischi)
-        for line in lines[index:]:
-            riga = line.strip()
-            if riga_asterischi.match(riga):
-                break
-            if riga:
-                righe_dati.append(riga)
-
-# Crea intestazioni CSV combinando verticalmente le 6 righe
+# Costruisce intestazioni verticali da 6 righe
 def crea_colonne_da_header(righe):
     split = [re.split(r'\s{2,}', r.strip()) for r in righe]
     max_col = max(len(r) for r in split)
@@ -85,7 +103,7 @@ def crea_colonne_da_header(righe):
 
 final_headers = crea_colonne_da_header(header_lines)
 
-# Scrittura riepilogo.txt nella stessa cartella dello script
+# Scrittura riepilogo.txt
 with open('riepilogo.txt', 'w', encoding='utf-8') as f:
     for r in header_lines:
         f.write(r + '\n')
@@ -100,16 +118,39 @@ with open('riepilogo.csv', 'w', encoding='utf-8', newline='') as f:
         valori = re.split(r'\s{2,}', r.strip())
         writer.writerow(valori)
 
-print(f"\n✅ Fatti! Letti {len(file_txt)} file da: {cartella_input}")
-print(f"📄 Trovate {len(righe_dati)} righe dati.")
-print("📝 File salvati: riepilogo.txt + riepilogo.csv")
+print(f"\n✅ Completato. File letti: {len(file_txt)}")
+print(f"📄 Contratti estratti: {len(righe_dati)}")
+print("📁 Output: riepilogo.txt + riepilogo.csv")
 
 
 ---
 
-📌 ISTRUZIONI
+✅ Pronto all’uso
 
-1. Cambia questa riga con la cartella dove hai
+1. Cambia la cartella nella riga:
 
 
+
+cartella_input = r'C:/ReportBatch'
+
+2. Salva, esegui lo script e ricevi:
+
+riepilogo.txt con intestazione unica e tutte le righe polizza
+
+riepilogo.csv pronto per Excel
+
+
+
+
+
+---
+
+Se vuoi:
+
+aggiungere colonna con nome file di provenienza
+
+esportare anche in .xlsx
+
+
+...dimmi pure!
 
