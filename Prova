@@ -1,115 +1,148 @@
-Perfetto, ripartiamo da zero, chiari e semplici come vuoi tu ✅
+Perfetto. Ora ho capito esattamente cosa intendi:
 
 
 ---
 
-🎯 Obiettivo finale (definitivo)
+✅ Obiettivo chiarissimo:
 
-Leggere tutti i file .txt nella cartella
+Le prime 6 righe, a partire da quella con LIVELLO, compongono tutte insieme l’intestazione
 
-In ognuno:
+Ogni colonna reale è composta da una "colonna verticale" di 6 parole, una per riga
 
-Cercare il blocco dati che inizia con la riga LIVELLO
+I dati nei file sono allineati visivamente sotto queste 6 righe
 
-Prendere solo l’intestazione del primo file
-
-Prendere tutte le righe sotto quell’intestazione (fino alla riga con *****)
-
-
-Ignorare:
-
-intestazioni ripetute
-
-righe vuote
-
-righe decorative (solo trattini o asterischi)
-
-
-Salvare tutto in:
-
-✅ riepilogo.txt
-
-✅ riepilogo.csv leggibile da Excel
-
+Quindi bisogna unire le parole colonna per colonna per ottenere le intestazioni vere
 
 
 
 ---
 
-✅ Codice completo e corretto (chiaro, semplice)
+🧠 Strategia corretta:
+
+1. Quando trovi la riga LIVELLO, prendi anche le 5 righe successive ⇒ ottieni 6 righe totali
+
+
+2. Le spezzettiamo in "colonne", estraendo parola per parola in verticale
+
+
+3. Combiniamo le parole in ciascuna “colonna” per ottenere nomi veri delle colonne
+
+
+4. Poi prendiamo le righe dei dati e le associamo a queste intestazioni
+
+
+
+
+---
+
+🧾 Codice aggiornato per interpretare correttamente le 6 righe come intestazione completa
 
 import os
 import re
 import csv
 
-# Pattern per trovare inizio, fine e righe inutili
+# Pattern per trovare inizio blocco
 inizio_tabella = re.compile(r'^\s*LIVELLO\b', re.IGNORECASE)
 fine_tabella = re.compile(r'^\s*\*{5,}\s*$')
 decorazioni = re.compile(r'^[\s\-\*=_\.]{4,}$')
 
-# Dove salvo le righe
-intestazione = None
+header_matrix = []  # le 6 righe
+header_built = False
+final_headers = []
 righe_dati = []
 
-# Scorro tutti i file txt nella cartella
 for nome_file in os.listdir():
     if nome_file.endswith('.txt') and not nome_file.startswith('riepilogo'):
         with open(nome_file, 'r', encoding='latin1') as f:
-            dentro_blocco = False
-            for riga in f:
-                riga_pulita = riga.strip()
+            lines = f.readlines()
+            start_index = None
 
-                # Inizio del blocco: prendi intestazione solo una volta
-                if not dentro_blocco and inizio_tabella.match(riga_pulita):
-                    if intestazione is None:
-                        intestazione = riga_pulita
-                    dentro_blocco = True
-                    continue  # salta questa riga, già salvata
-
-                # Fine del blocco
-                if dentro_blocco and fine_tabella.match(riga_pulita):
+            # Trova la riga "LIVELLO"
+            for i, line in enumerate(lines):
+                if inizio_tabella.match(line.strip()):
+                    start_index = i
                     break
 
-                # Se siamo dentro al blocco e la riga è valida, salvala
-                if dentro_blocco:
-                    if riga_pulita and not decorazioni.match(riga_pulita):
-                        righe_dati.append(riga_pulita)
+            if start_index is not None:
+                # Se ancora non abbiamo preso le 6 righe di intestazione
+                if not header_built:
+                    header_matrix = [lines[start_index + j].rstrip('\n') for j in range(6)]
+                    header_built = True
 
-# Scrivi il file TXT
+                # Righe dei dati, da dopo le 6 righe
+                for line in lines[start_index + 6:]:
+                    clean = line.strip()
+                    if fine_tabella.match(clean):
+                        break
+                    if clean and not decorazioni.match(clean):
+                        righe_dati.append(clean)
+
+# 🔠 Costruzione intestazioni colonna per colonna
+def build_headers_from_lines(righe):
+    split_lines = [re.split(r'\s{2,}', r.strip()) for r in righe]
+    max_col = max(len(r) for r in split_lines)
+    # Normalizza tutte le righe alla stessa lunghezza
+    for row in split_lines:
+        while len(row) < max_col:
+            row.append('')
+    # Trasponi e unisci verticalmente
+    headers = [' '.join(col).strip() for col in zip(*split_lines)]
+    return headers
+
+final_headers = build_headers_from_lines(header_matrix)
+
+# 📝 Scrive riepilogo.txt
 with open('riepilogo.txt', 'w', encoding='utf-8') as f:
-    if intestazione:
-        f.write(intestazione + '\n')
+    f.write('\n'.join(header_matrix) + '\n')
     for r in righe_dati:
         f.write(r + '\n')
 
-# Scrivi anche un file CSV per Excel
+# 📊 Scrive riepilogo.csv
 with open('riepilogo.csv', 'w', encoding='utf-8', newline='') as f:
     writer = csv.writer(f, delimiter=';')
-    if intestazione:
-        colonne = re.split(r'\s{2,}', intestazione.strip())
-        writer.writerow(colonne)
-    for r in righe_dati:
-        valori = re.split(r'\s{2,}', r.strip())
+    writer.writerow(final_headers)
+    for line in righe_dati:
+        valori = re.split(r'\s{2,}', line.strip())
         writer.writerow(valori)
 
-print("✅ Fatto! Tutti i contenuti sono sotto un’unica intestazione.")
+print("✅ Fatto! Intestazione combinata verticalmente da 6 righe.")
 
 
 ---
 
-✅ Cosa ottieni
+✅ Esempio (semplificato visivamente)
 
-riepilogo.txt
+Se le prime 6 righe sono:
 
-LIVELLO  POLIZZA  ADESIONE  EFFETTO  ERRORE
-3        123456   0101      2025-07  RuntimeException
-3        789012   0102      2025-07  NullPointerException
-...
+LIVELLO    OGGETTO     TIPO
+ID         OPERAZIONE  STATUS
+DATA       TABELLA     ERRORE
+EFFETTO    LABEL       POLIZZA
+ADESIONE   SERVIZIO    TABELLA
+DESCRIZ.   ...         ...
 
-riepilogo.csv
+Lo script costruirà intestazioni così:
 
-Apribile in Excel
+LIVELLO ID DATA EFFETTO ADESIONE DESCRIZ.  
+OGGETTO OPERAZIONE TABELLA LABEL SERVIZIO ...
+TIPO STATUS ERRORE POLIZZA TABELLA ...
 
-Colonne
+e le combinerà come:
+
+['LIVELLO ID DATA EFFETTO ADESIONE DESCRIZ.', 'OGGETTO OPERAZIONE TABELLA LABEL SERVIZIO ...', ...]
+
+✅ Così ottieni un file riepilogo.csv con colonne leggibili e coerenti con la struttura originale.
 
 
+---
+
+Fammi sapere se vuoi:
+
+forzare il numero di colonne (es. sempre 10)
+
+tenere spazi o sostituirli con _
+
+aggiungere il nome del file in fondo a ogni riga
+
+
+Tutto pronto in pochi secondi!
