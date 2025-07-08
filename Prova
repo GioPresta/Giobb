@@ -1,1 +1,144 @@
 
+Perfetto! Ecco lo script completo e funzionante che:
+
+
+---
+
+✅ Cosa fa:
+
+Unisce tutti i file .txt nella cartella dello script
+
+Estrae solo la sezione da “LIVELLO” fino alla riga con asterischi
+
+Rimuove righe vuote o decorative (----, *****, ecc.)
+
+Scrive:
+
+un file riepilogo.txt pulito
+
+un file riepilogo.csv leggibile da Excel senza bisogno di installare niente
+
+
+
+
+---
+
+🧾 Codice completo (senza dipendenze esterne)
+
+import os
+import re
+import csv
+
+# Regex per struttura dei report
+END_SECTION_PATTERN = re.compile(r'^\s*\*{5,}\s*$')
+DECORATION_PATTERN = re.compile(r'^[\s\-\*=_\.]{4,}$')
+START_HEADER_PATTERN = re.compile(r'^\s*LIVELLO\b', re.IGNORECASE)
+
+def extract_section(file_path):
+    """Estrae intestazione + righe dati da un file txt"""
+    with open(file_path, 'r', encoding='latin1') as f:
+        in_section = False
+        header = None
+        content = []
+
+        for line in f:
+            line_clean = line.strip()
+
+            if not in_section:
+                if START_HEADER_PATTERN.match(line_clean):
+                    header = line_clean
+                    in_section = True
+            else:
+                if END_SECTION_PATTERN.match(line_clean):
+                    break
+                elif not DECORATION_PATTERN.match(line_clean) and line_clean:
+                    content.append(line.rstrip())
+
+        return header, content
+
+def write_csv_file(header_line, data_lines, output_csv='riepilogo.csv'):
+    """Scrive i dati estratti in un CSV leggibile da Excel"""
+    with open(output_csv, 'w', encoding='utf-8', newline='') as f:
+        writer = csv.writer(f, delimiter=';')
+
+        # Scrivi intestazione
+        headers = re.split(r'\s{2,}', header_line.strip())
+        writer.writerow(headers)
+
+        # Scrivi righe dati
+        for line in data_lines:
+            values = re.split(r'\s{2,}', line.strip())
+            writer.writerow(values)
+
+    print(f"📄 File CSV generato: {output_csv}")
+
+def merge_all_reports(output_txt='riepilogo.txt', output_csv='riepilogo.csv'):
+    current_dir = os.getcwd()
+    txt_files = [f for f in os.listdir(current_dir)
+                 if f.endswith('.txt') and f != output_txt]
+
+    merged_content = []
+    saved_header = None
+
+    for txt_file in txt_files:
+        file_path = os.path.join(current_dir, txt_file)
+        header, content = extract_section(file_path)
+
+        if saved_header is None and header:
+            saved_header = header
+
+        merged_content.extend(content)
+
+    # Scrittura file di testo
+    with open(output_txt, 'w', encoding='utf-8') as out:
+        if saved_header:
+            out.write(saved_header + '\n')
+        out.write('\n'.join(merged_content))
+        out.write('\n')
+    print(f"📝 File di testo generato: {output_txt}")
+
+    # Scrittura file CSV
+    if saved_header:
+        write_csv_file(saved_header, merged_content, output_csv)
+
+if __name__ == "__main__":
+    merge_all_reports()
+
+
+---
+
+📂 Come usarlo
+
+1. Salva il codice in un file, ad esempio merge_batch_reports.py
+
+
+2. Metti nella stessa cartella tutti i tuoi file .txt (come da foto)
+
+
+3. Esegui lo script:
+
+
+
+python merge_batch_reports.py
+
+➕ Ottieni:
+
+riepilogo.txt → output testuale
+
+riepilogo.csv → apribile in Excel
+
+
+
+---
+
+Se vuoi:
+
+una colonna con il nome del file sorgente
+
+il filtraggio di certe righe
+
+oppure trasformare in .xlsx
+
+
+…fammi un fischio!
+
