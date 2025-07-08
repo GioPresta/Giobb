@@ -1,49 +1,165 @@
+Perfetto! Ora estendiamo lo script per:
+
+
+---
+
+✅ Obiettivo aggiornato:
+
+1. Continuare a creare riepilogo.txt (come ora)
+
+
+2. Creare anche un file Excel .xlsx:
+
+con intestazioni nelle celle della prima riga
+
+valori incolonnati correttamente sotto ogni intestazione
+
+
+
+
+
+---
+
+🔧 Strategia:
+
+Usiamo la libreria openpyxl per generare il file Excel
+
+Dopo aver raccolto le righe (già fatte in merged_content), le dividiamo in colonne separando ogni riga su base spazi multipli
+
+Scriviamo l’intestazione come prima riga del foglio
+
+Scriviamo le righe sotto, ognuna in una riga del foglio
+
+
+
+---
+
+📦 Prima di eseguire: installa openpyxl (solo la prima volta)
+
+Apri il terminale e digita:
+
+pip install openpyxl
+
+
+---
+
+✅ Codice completo aggiornato (con export Excel)
+
 import os
 import re
+from openpyxl import Workbook
 
-# Riconosce riga di chiusura con asterischi
+# Regex per sezioni
 END_SECTION_PATTERN = re.compile(r'^\s*\*{5,}\s*$')
-# Righe solo decorative (es. ----, ****, etc.)
 DECORATION_PATTERN = re.compile(r'^[\s\-\*=_\.]{4,}$')
-# Intestazione "LIVELLO ..." (inizio sezione)
 START_HEADER_PATTERN = re.compile(r'^\s*LIVELLO\b', re.IGNORECASE)
 
-def extract_error_lines(file_path, header_saved_flag):
+def extract_section(file_path):
     with open(file_path, 'r', encoding='latin1') as f:
         in_section = False
-        collected = []
-        for line in f:
-            if not in_section:
-                if START_HEADER_PATTERN.match(line):
-                    in_section = True
-                    if not header_saved_flag[0]:
-                        header_saved_flag[0] = True
-                        collected.append(line.strip())
-            else:
-                if END_SECTION_PATTERN.match(line):
-                    break
-                elif not DECORATION_PATTERN.match(line) and line.strip():
-                    collected.append(line.rstrip())
-        return collected
+        header = None
+        content = []
 
-def merge_all_reports(output_file='riepilogo.txt'):
+        for line in f:
+            line_clean = line.strip()
+
+            if not in_section:
+                if START_HEADER_PATTERN.match(line_clean):
+                    header = line_clean
+                    in_section = True
+            else:
+                if END_SECTION_PATTERN.match(line_clean):
+                    break
+                elif not DECORATION_PATTERN.match(line_clean) and line_clean:
+                    content.append(line.rstrip())
+        return header, content
+
+
+def write_excel_file(header_line, data_lines, output_excel='riepilogo.xlsx'):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Errori Batch"
+
+    # Divide l'intestazione in colonne (spazi multipli)
+    headers = re.split(r'\s{2,}', header_line.strip())
+    ws.append(headers)
+
+    for line in data_lines:
+        values = re.split(r'\s{2,}', line.strip())
+        ws.append(values)
+
+    wb.save(output_excel)
+    print(f"📊 Excel generato: {output_excel}")
+
+
+def merge_all_reports(output_txt='riepilogo.txt', output_excel='riepilogo.xlsx'):
     current_dir = os.getcwd()
     txt_files = [f for f in os.listdir(current_dir)
-                 if f.endswith('.txt') and f != output_file]
+                 if f.endswith('.txt') and f != output_txt]
 
-    all_lines = []
-    header_written = [False]  # flag modificabile dentro le funzioni
+    merged_content = []
+    saved_header = None
 
     for txt_file in txt_files:
         file_path = os.path.join(current_dir, txt_file)
-        lines = extract_error_lines(file_path, header_written)
-        all_lines.extend(lines)
+        header, content = extract_section(file_path)
 
-    with open(output_file, 'w', encoding='utf-8') as out:
-        for line in all_lines:
-            out.write(line + '\n')
+        if saved_header is None and header:
+            saved_header = header
 
-    print(f"✔ Report finale generato in '{output_file}'.")
+        merged_content.extend(content)
+
+    # Scrittura file TXT
+    with open(output_txt, 'w', encoding='utf-8') as out:
+        if saved_header:
+            out.write(saved_header + '\n')
+        out.write('\n'.join(merged_content))
+        out.write('\n')
+    print(f"📝 Report testo salvato: {output_txt}")
+
+    # Scrittura file Excel
+    if saved_header:
+        write_excel_file(saved_header, merged_content, output_excel)
+
 
 if __name__ == "__main__":
     merge_all_reports()
+
+
+---
+
+✅ Output finale:
+
+riepilogo.txt: testo semplice con intestazione + righe
+
+riepilogo.xlsx: foglio Excel con:
+
+intestazioni automatiche nelle celle A1, B1, C1, ecc.
+
+dati puliti allineati in colonne
+
+
+
+
+---
+
+💡 Consigli utili:
+
+La separazione in colonne si basa su almeno 2 spazi consecutivi (\s{2,}) per evitare che le parole separate da un solo spazio causino rottura
+
+Puoi aprire il file .xlsx direttamente in Excel
+
+
+
+---
+
+Fammi sapere se vuoi:
+
+colorare celle con errori
+
+filtrare o ordinare
+
+includere il nome file di origine in una colonna
+
+
+Tutto si può fare facilmente!
