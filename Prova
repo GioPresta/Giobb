@@ -1,96 +1,115 @@
-Certo! Ecco la versione semplificata e lineare dello script, scritta in modo chiaro, come se fosse stata fatta da un ragazzo che ha imparato Python da poco. Fa tutto quello che ti serve, ma senza strutture troppo complicate:
+Perfetto, ripartiamo da zero, chiari e semplici come vuoi tu ✅
 
 
 ---
 
-🧾 Codice Python semplificato
+🎯 Obiettivo finale (definitivo)
+
+Leggere tutti i file .txt nella cartella
+
+In ognuno:
+
+Cercare il blocco dati che inizia con la riga LIVELLO
+
+Prendere solo l’intestazione del primo file
+
+Prendere tutte le righe sotto quell’intestazione (fino alla riga con *****)
+
+
+Ignorare:
+
+intestazioni ripetute
+
+righe vuote
+
+righe decorative (solo trattini o asterischi)
+
+
+Salvare tutto in:
+
+✅ riepilogo.txt
+
+✅ riepilogo.csv leggibile da Excel
+
+
+
+
+---
+
+✅ Codice completo e corretto (chiaro, semplice)
 
 import os
 import re
 import csv
 
-# Per riconoscere dove inizia e finisce la tabella nei file
+# Pattern per trovare inizio, fine e righe inutili
 inizio_tabella = re.compile(r'^\s*LIVELLO\b', re.IGNORECASE)
 fine_tabella = re.compile(r'^\s*\*{5,}\s*$')
-riga_decorativa = re.compile(r'^[\s\-\*=_\.]{4,}$')
+decorazioni = re.compile(r'^[\s\-\*=_\.]{4,}$')
 
-# Qui salvo intestazione e righe dei dati
+# Dove salvo le righe
 intestazione = None
-tutte_le_righe = []
+righe_dati = []
 
-# Prende tutti i file .txt nella cartella
+# Scorro tutti i file txt nella cartella
 for nome_file in os.listdir():
-    if nome_file.endswith('.txt') and nome_file != 'riepilogo.txt':
-        with open(nome_file, 'r', encoding='latin1') as file:
-            dentro_tabella = False
-            for riga in file:
+    if nome_file.endswith('.txt') and not nome_file.startswith('riepilogo'):
+        with open(nome_file, 'r', encoding='latin1') as f:
+            dentro_blocco = False
+            for riga in f:
                 riga_pulita = riga.strip()
 
-                if not dentro_tabella:
-                    if inizio_tabella.match(riga_pulita):
-                        if intestazione is None:
-                            intestazione = riga_pulita
-                        dentro_tabella = True
-                else:
-                    if fine_tabella.match(riga_pulita):
-                        break
-                    if not riga_decorativa.match(riga_pulita) and riga_pulita != intestazione:
-                        tutte_le_righe.append(riga.strip())
+                # Inizio del blocco: prendi intestazione solo una volta
+                if not dentro_blocco and inizio_tabella.match(riga_pulita):
+                    if intestazione is None:
+                        intestazione = riga_pulita
+                    dentro_blocco = True
+                    continue  # salta questa riga, già salvata
 
-# Scrive il file riepilogo.txt
-with open('riepilogo.txt', 'w', encoding='utf-8') as txt_out:
+                # Fine del blocco
+                if dentro_blocco and fine_tabella.match(riga_pulita):
+                    break
+
+                # Se siamo dentro al blocco e la riga è valida, salvala
+                if dentro_blocco:
+                    if riga_pulita and not decorazioni.match(riga_pulita):
+                        righe_dati.append(riga_pulita)
+
+# Scrivi il file TXT
+with open('riepilogo.txt', 'w', encoding='utf-8') as f:
     if intestazione:
-        txt_out.write(intestazione + '\n')
-    for r in tutte_le_righe:
-        txt_out.write(r + '\n')
+        f.write(intestazione + '\n')
+    for r in righe_dati:
+        f.write(r + '\n')
 
-# Scrive anche un file CSV
-with open('riepilogo.csv', 'w', encoding='utf-8', newline='') as csv_out:
-    writer = csv.writer(csv_out, delimiter=';')
+# Scrivi anche un file CSV per Excel
+with open('riepilogo.csv', 'w', encoding='utf-8', newline='') as f:
+    writer = csv.writer(f, delimiter=';')
     if intestazione:
         colonne = re.split(r'\s{2,}', intestazione.strip())
         writer.writerow(colonne)
-    for riga in tutte_le_righe:
-        valori = re.split(r'\s{2,}', riga.strip())
+    for r in righe_dati:
+        valori = re.split(r'\s{2,}', r.strip())
         writer.writerow(valori)
 
-print("✅ Fatto! File riepilogo.txt e riepilogo.csv creati.")
+print("✅ Fatto! Tutti i contenuti sono sotto un’unica intestazione.")
 
 
 ---
 
-💬 Cosa fa, in parole semplici:
-
-1. Apre tutti i file .txt nella cartella
-
-
-2. Prende solo le righe dalla scritta LIVELLO fino agli asterischi *****
-
-
-3. Salta le righe piene di trattini o asterischi
-
-
-4. Tiene solo una intestazione, quella del primo file
-
-
-5. Unisce tutte le righe sotto quella intestazione
-
-
-6. Scrive tutto in:
+✅ Cosa ottieni
 
 riepilogo.txt
 
-riepilogo.csv per Excel
+LIVELLO  POLIZZA  ADESIONE  EFFETTO  ERRORE
+3        123456   0101      2025-07  RuntimeException
+3        789012   0102      2025-07  NullPointerException
+...
 
+riepilogo.csv
 
+Apribile in Excel
 
+Colonne
 
-
----
-
-✅ Nessuna dipendenza da installare
-
-Questo script funziona con solo Python. Non serve pip install o altro.
-
-Se vuoi che aggiunga la colonna col **nome
 
