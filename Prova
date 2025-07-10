@@ -1,67 +1,139 @@
 import os
-import re
 import csv
 
-# === CONFIG ===
-cartella = "."  # cartella corrente
-output_file = "output_commissioni.csv"
+# === CONFIGURAZIONI ===
+HEADER_LINES_TO_DELETE = [
+    "LIVELLO",
+    "ID",
+    "OPERAZIONE"
+]
 
-# === PARSING DELLA RIGA ===
-def process_line(line):
-    line = line.strip()
+HEADERS_TO_DEDUPLICATE = [
+    "GRAVITÀ",
+    "ADESIONE",
+    "ERRORE"
+]
 
-    if len(line) < 40:  # troppo corta
-        return None
+# === FUNZIONI ===
 
-    # Estrai polizza e garanzia
-    match1 = re.match(r"(\d+)([A-Z0-9]{5})", line)
-    if not match1:
-        return None
-    polizza, garanzia = match1.groups()
-    rest = line[match1.end():]
+def estrai_blocco_dati(filepath):
+    with open(filepath, 'r', encoding='latin-1') as f:
+        righe = f.readlines()
 
-    # Estrai fondo
-    match2 = re.match(r"([A-Z]{2}\d+)", rest)
-    if not match2:
-        return None
-    fondo = match2.group(1)
-    rest = rest[match2.end():].lstrip()
+    blocco = []
+    i = 0
 
-    # Pulisci zeri e parse commissioni + tipo op + date
-    rest = rest.lstrip("0")
-    match3 = re.match(r"(\d+)([A-Z]{2})(\d{8})(\d{8})", rest)
-    if not match3:
-        return None
+    while i < len(righe) and 'LIVELLO' not in righe[i]:
+        i += 1
 
-    commissioni_raw, tipo_op, data_effetto_raw, data_competenza_raw = match3.groups()
+    if i >= len(righe):
+        return []
 
-    if tipo_op == "SD":
-        return None
+    i += 6  # salta righe successive all'intestazione
 
-    try:
-        commissioni = int(commissioni_raw) / 10_000_000
-    except ValueError:
-        return None
+    while i < len(righe):
+        riga = righe[i].strip()
+        if riga.startswith('*'):
+            break
+        if not set(riga).issubset(set(' ')):
+            blocco.append(righe[i])
+        i += 1
 
-    data_effetto = f"{data_effetto_raw[6:8]}/{data_effetto_raw[4:6]}/{data_effetto_raw[0:4]}"
-    data_competenza = f"{data_competenza_raw[6:8]}/{data_competenza_raw[4:6]}/{data_competenza_raw[0:4]}"
+    return blocco
 
-    return [polizza, garanzia, fondo, f"{commissioni:.7f}", tipo_op, data_effetto, data_competenza]
+def pulisci_output(path_file):
+    with open(path_file, 'r', encoding='latin-1') as f:
+        righe = f.readlines()
 
-# === LEGGI FILE .TXT E PROCESSA ===
-righe_output = []
-for file_name in os.listdir(cartella):
-    if file_name.upper().endswith(".TXT") and file_name.upper() in ("COMMGFNZ.TXT", "REPCOMMG.TXT"):
-        with open(os.path.join(cartella, file_name), "r", encoding="utf-8") as f:
-            for line in f:
-                riga = process_line(line)
-                if riga:
-                    righe_output.append(riga)
+    pulite = []
+    intestazioni_trovate = set()
 
-# === SCRIVI CSV ===
-with open(output_file, mode="w", newline="", encoding="utf-8") as csvfile:
-    writer = csv.writer(csvfile, delimiter=";")
-    writer.writerow(["Polizza", "Garanzia", "Fondo", "Commissioni", "Tipo operazione", "Data effetto", "Data competenza"])
-    writer.writerows(righe_output)
+    for riga in righe:
+        testo = riga.strip()
 
-print(f"✅ File CSV generato: {output_file}")
+        if not testo:
+            continue
+        if testo.startswith('*'):
+            continue
+        if set(testo).issubset(set(' ')):
+            continue
+
+        if any(testo.startswith(prefix) for prefix in HEADER_LINES_TO_DELETE):
+            continue
+
+        if any(testo.startswith(h) for h in HEADERS_TO_DEDUPLICATE):
+            header = next((h for h in HEADERS_TO_DEDUPLICATE if testo.startswith(h)), None)
+            if header in intestazioni_trovate:
+                continue
+            intestazioni_trovate.add(header)
+
+        pulite.append(riga)
+
+    with open(path_file, 'w', encoding='latin-1') as f:
+        f.writelines(pulite)
+
+def converti_fixed_width_in_csv(input_txt, output_csv):
+    # Colonne da: 0-8, 8-28, ..., 360-378
+    column_widths = [
+        8,   # 0–8
+        20,  # 8–28
+        31,  # 28–59
+        24,  # 59–83
+        42,  # 83–125
+        25,  # 125–150
+        10,  # 150–160
+        10,  # 160–170
+        102, # 170–272
+        9,   # 272–281
+        10,  # 281–291
+        19,  # 291–310
+        20,  # 310–330
+        15,  # 330–345
+        15,  # 345–360
+        18   # 360–378
+    ]
+
+    def split_fixed_width(line, widths):
+        fields = []
+        start = 0
+        for width in widths:
+            fields.append(line[start:start+width].strip())
+            start += width
+        return fields
+
+    with open(input_txt, 'r', encoding='latin-1') as f_in, open(output_csv, 'w', newline='', encoding='utf-8') as f_out:
+        writer = csv.writer(f_out)
+        for line in f_in:
+            if line.strip():
+                row = split_fixed_width(line, column_widths)
+                writer.writerow(row)
+
+# === MAIN ===
+
+def main():
+    cartella = os.path.dirname(os.path.abspath(__file__))
+    nome_output = "Riepilogo.txt"
+    percorso_output = os.path.join(cartella, nome_output)
+
+    files_txt = sorted([
+        f for f in os.listdir(cartella)
+        if f.endswith('.txt') and f != nome_output
+    ])
+
+    risultato = []
+    for file in files_txt:
+        blocco = estrai_blocco_dati(os.path.join(cartella, file))
+        if blocco:
+            risultato.extend(blocco)
+            risultato.append('\n')
+
+    with open(percorso_output, 'w', encoding='latin-1') as f:
+        f.writelines(risultato)
+
+    pulisci_output(percorso_output)
+    converti_fixed_width_in_csv(percorso_output, "Riepilogo.csv")
+    print("✅ Riepilogo.csv generato correttamente!")
+
+if __name__ == "__main__":
+    main()
+
