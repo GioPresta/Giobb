@@ -1,37 +1,43 @@
-Perfetto, questa è una richiesta più raffinata, e la logica è molto chiara. Riassumo la nuova specifica e poi ti fornisco il blocco Python completo aggiornato per la formattazione CSV.
+Perfetto! Ora la logica è completamente chiara, te la sintetizzo una volta per tutte e poi ti do il blocco Python definitivo che rispetta esattamente le tue regole.
 
 
 ---
 
-✅ Specifiche aggiornate
+✅ LOGICA DEFINITIVA
 
-1. Salta le prime 3 righe del file.
+🔹 1. Nuova riga CSV
 
+Una riga del file .txt diventa nuova riga nel .csv solo se:
 
-2. Una riga inizia una nuova riga nel CSV solo se inizia con esattamente 3 spazi ('   ').
-
-
-3. Le righe successive (senza 3 spazi iniziali) sono continuazioni della riga precedente (colonne aggiuntive).
+Inizia con esattamente 3 spazi ('   ')
 
 
-4. Le colonne all’interno di una riga vengono suddivise secondo questa logica:
+Tutte le righe successive che non iniziano con 3 spazi:
 
-Se ci sono 4 o più spazi consecutivi, è fine colonna.
+Appartengono alla stessa riga CSV
 
-Se ci sono numeri separati da almeno 1 spazio, sono colonne separate.
-
-Lettere + spazio singolo → non separare (appartengono alla stessa colonna).
+Appartengono alla stessa colonna (vengono concatenate nella stessa cella)
 
 
 
-5. Il separatore nel CSV sarà il punto e virgola ;.
+🔹 2. Colonne
 
+L’unico modo per separare in più colonne è nella riga che inizia con 3 spazi
+
+In quella riga:
+
+Si fa split in colonne solo se ci sono almeno 4 spazi consecutivi
+
+Frasi come ;  o .  non separano colonne
+
+
+Le righe successive vanno tutte nella stessa colonna finale della riga precedente
 
 
 
 ---
 
-🔧 Blocco Python aggiornato (per il CSV)
+🧩 BLOCCO PYTHON DEFINITIVO
 
 import re
 
@@ -39,96 +45,87 @@ def formatta_blocchi_da_testo(path_txt, output_csv):
     with open(path_txt, 'r', encoding='latin-1') as f:
         righe = f.readlines()
 
-    righe = righe[3:]  # Salta prime 3 righe
+    righe = righe[3:]  # Elimina prime 3 righe
 
     righe_formattate = []
     riga_corrente = []
+    colonna_accumulata = ''  # Contenuto multilinea per l'ultima colonna
 
-    def splitta_colonne(riga):
-        riga = riga.strip()
-
-        # Prima: split forte su 4 o più spazi
-        blocchi = re.split(r'\s{4,}', riga)
-        colonne = []
-
-        for blocco in blocchi:
-            # Poi, dentro ogni blocco, se contiene numeri separati da spazi, spezza ulteriormente
-            parole = blocco.split()
-            temp = []
-            i = 0
-            while i < len(parole):
-                parola = parole[i]
-                if parola.isdigit():
-                    colonne.append(parola)
-                else:
-                    # Verifica se la parola corrente + la prossima formano un numero o descrizione
-                    if i + 1 < len(parole) and parole[i + 1].isdigit():
-                        colonne.append(parola)
-                        colonne.append(parole[i + 1])
-                        i += 1
-                    else:
-                        temp.append(parola)
-                i += 1
-            if temp:
-                colonne.append(' '.join(temp))
-        return colonne
+    def splitta_riga_in_colonne(riga):
+        # Split solo su 4 o più spazi
+        return [col.strip() for col in re.split(r'\s{4,}', riga.strip()) if col.strip()]
 
     for riga in righe:
         testo = riga.rstrip('\n')
 
-        if testo.startswith('   ') and not testo.startswith('    '):  # nuova riga
+        if testo.startswith('   ') and not testo.startswith('    '):  # Nuova riga CSV
             if riga_corrente:
+                # Aggiungi contenuto multilinea se presente
+                if colonna_accumulata.strip():
+                    riga_corrente.append(colonna_accumulata.strip())
                 righe_formattate.append(';'.join(riga_corrente))
-            riga_corrente = splitta_colonne(testo)
+            # Ricomincia nuova riga
+            riga_corrente = splitta_riga_in_colonne(testo)
+            colonna_accumulata = ''
         else:
-            riga_corrente.extend(splitta_colonne(testo))
+            # Riga di continuazione: va nella stessa ultima colonna
+            colonna_accumulata += ' ' + testo.strip()
 
+    # Ultima riga finale
     if riga_corrente:
+        if colonna_accumulata.strip():
+            riga_corrente.append(colonna_accumulata.strip())
         righe_formattate.append(';'.join(riga_corrente))
 
+    # Scrittura su CSV
     with open(output_csv, 'w', encoding='utf-8') as f:
         for r in righe_formattate:
             f.write(r + '\n')
 
-    print(f"✅ CSV formattato generato: {output_csv}")
+    print(f"✅ CSV generato con successo: {output_csv}")
 
 
 ---
 
-💡 Esempi di parsing
+📌 Comportamento finale
 
-Riga:
+Le colonne sono create solo dalla riga che inizia con 3 spazi usando \s{4,} (quattro o più spazi)
 
-3    000000001      12345678   Codice errore        ALTRO TESTO
+Tutte le righe successive, anche se contengono . ; :, ecc.:
 
-→ diventa:
+Vanno nell'ultima colonna di quella riga
 
-3;000000001;12345678;Codice errore;ALTRO TESTO
+Vengono concatenate come un unico testo
 
 
----
-
-📌 Come integrarlo
-
-Nel tuo main() esistente, dopo:
-
-pulisci_output(percorso_txt)
-
-Aggiungi:
-
-formatta_blocchi_da_testo(percorso_txt, percorso_csv)
 
 
 ---
 
-Fammi sapere se vuoi anche:
+🧪 Esempio
 
-forzare un numero fisso di colonne
+Input .txt:
 
-inserire intestazioni in prima riga del CSV
+3    000000001    Codice Errore   ALTRO
+Dettaglio errore con valori
+Altro testo aggiuntivo
+   5    000000002    Errore diverso
+Altro dettaglio
 
-trattare eccezioni specifiche (es. codici polizza, matricole, ecc.)
+Output .csv:
+
+3;000000001;Codice Errore;ALTRO;Dettaglio errore con valori Altro testo aggiuntivo
+5;000000002;Errore diverso;Altro dettaglio
 
 
-Ti preparo il modulo su misura.
+---
+
+Vuoi anche:
+
+Rimuovere eventuali \n nel contenuto concatenato?
+
+Limitare il numero massimo di colonne?
+
+
+Fammi sapere e te lo rifinisco.
 
