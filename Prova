@@ -1,25 +1,37 @@
-Perfetto! Allora specifichiamo:
+Perfetto, questa è una richiesta più raffinata, e la logica è molto chiara. Riassumo la nuova specifica e poi ti fornisco il blocco Python completo aggiornato per la formattazione CSV.
 
 
 ---
 
-✅ Regole aggiornate
+✅ Specifiche aggiornate
 
-Elimina le prime 3 righe
+1. Salta le prime 3 righe del file.
 
-Una riga inizia una nuova riga CSV solo se inizia con esattamente 3 spazi → text.startswith('   ') and not text.startswith('    ')
 
-Le colonne sono delimitate da almeno 3 spazi consecutivi → re.split(r'\s{3,}', ...)
+2. Una riga inizia una nuova riga nel CSV solo se inizia con esattamente 3 spazi ('   ').
 
-Le righe che non iniziano con esattamente 3 spazi sono da concatenare alla riga corrente, come colonne successive
 
-Il CSV usa il punto e virgola ; come separatore
+3. Le righe successive (senza 3 spazi iniziali) sono continuazioni della riga precedente (colonne aggiuntive).
+
+
+4. Le colonne all’interno di una riga vengono suddivise secondo questa logica:
+
+Se ci sono 4 o più spazi consecutivi, è fine colonna.
+
+Se ci sono numeri separati da almeno 1 spazio, sono colonne separate.
+
+Lettere + spazio singolo → non separare (appartengono alla stessa colonna).
+
+
+
+5. Il separatore nel CSV sarà il punto e virgola ;.
+
 
 
 
 ---
 
-🧩 Blocco Python aggiornato (da aggiungere al tuo script)
+🔧 Blocco Python aggiornato (per il CSV)
 
 import re
 
@@ -27,44 +39,96 @@ def formatta_blocchi_da_testo(path_txt, output_csv):
     with open(path_txt, 'r', encoding='latin-1') as f:
         righe = f.readlines()
 
-    # Elimina le prime 3 righe
-    righe = righe[3:]
+    righe = righe[3:]  # Salta prime 3 righe
 
     righe_formattate = []
     riga_corrente = []
 
+    def splitta_colonne(riga):
+        riga = riga.strip()
+
+        # Prima: split forte su 4 o più spazi
+        blocchi = re.split(r'\s{4,}', riga)
+        colonne = []
+
+        for blocco in blocchi:
+            # Poi, dentro ogni blocco, se contiene numeri separati da spazi, spezza ulteriormente
+            parole = blocco.split()
+            temp = []
+            i = 0
+            while i < len(parole):
+                parola = parole[i]
+                if parola.isdigit():
+                    colonne.append(parola)
+                else:
+                    # Verifica se la parola corrente + la prossima formano un numero o descrizione
+                    if i + 1 < len(parole) and parole[i + 1].isdigit():
+                        colonne.append(parola)
+                        colonne.append(parole[i + 1])
+                        i += 1
+                    else:
+                        temp.append(parola)
+                i += 1
+            if temp:
+                colonne.append(' '.join(temp))
+        return colonne
+
     for riga in righe:
         testo = riga.rstrip('\n')
 
-        # Se inizia con ESATTAMENTE 3 spazi
-        if testo.startswith('   ') and not testo.startswith('    '):
+        if testo.startswith('   ') and not testo.startswith('    '):  # nuova riga
             if riga_corrente:
                 righe_formattate.append(';'.join(riga_corrente))
-            riga_corrente = [col.strip() for col in re.split(r'\s{3,}', testo.strip()) if col.strip()]
+            riga_corrente = splitta_colonne(testo)
         else:
-            nuove_colonne = [col.strip() for col in re.split(r'\s{3,}', testo.strip()) if col.strip()]
-            riga_corrente.extend(nuove_colonne)
+            riga_corrente.extend(splitta_colonne(testo))
 
     if riga_corrente:
         righe_formattate.append(';'.join(riga_corrente))
 
     with open(output_csv, 'w', encoding='utf-8') as f:
-        for riga in righe_formattate:
-            f.write(riga + '\n')
+        for r in righe_formattate:
+            f.write(r + '\n')
 
-    print(f"✅ CSV formattato generato correttamente: {output_csv}")
+    print(f"✅ CSV formattato generato: {output_csv}")
 
 
 ---
 
-✔️ Come integrarlo
+💡 Esempi di parsing
 
-Nel tuo main(), dopo pulisci_output(...), aggiungi:
+Riga:
+
+3    000000001      12345678   Codice errore        ALTRO TESTO
+
+→ diventa:
+
+3;000000001;12345678;Codice errore;ALTRO TESTO
+
+
+---
+
+📌 Come integrarlo
+
+Nel tuo main() esistente, dopo:
+
+pulisci_output(percorso_txt)
+
+Aggiungi:
 
 formatta_blocchi_da_testo(percorso_txt, percorso_csv)
 
 
 ---
 
-Se vuoi anche aggiungere intestazioni, o gestire campi vuoti con placeholder (es. "" o NULL), fammi sapere!
+Fammi sapere se vuoi anche:
+
+forzare un numero fisso di colonne
+
+inserire intestazioni in prima riga del CSV
+
+trattare eccezioni specifiche (es. codici polizza, matricole, ecc.)
+
+
+Ti preparo il modulo su misura.
 
