@@ -1,27 +1,18 @@
 import os
 import pandas as pd
 
-# Cartella in cui si trovano i file
-cartella_lavoro = os.getcwd()  # Usa la cartella corrente dello script
-
-# Mostra tutti i file .TXT presenti (debug)
-print("File .TXT trovati nella cartella:")
-for file in os.listdir(cartella_lavoro):
-    if file.endswith(".TXT"):
-        print(" -", file)
-
-# Costruisci i percorsi assoluti dei file
+# Imposta cartella di lavoro
+cartella_lavoro = os.getcwd()
 file1 = os.path.join(cartella_lavoro, "COMMGFNZ.TXT")
 file2 = os.path.join(cartella_lavoro, "REPCOMMG.TXT")
 output_file = os.path.join(cartella_lavoro, "output_unificato.xlsx")
 
-# Funzione per convertire la data da AAAAMMGG a GG/MM/AAAA
 def converti_data(data_str):
-    if len(data_str.strip()) != 8:
-        return ""
-    return f"{data_str[6:8]}/{data_str[4:6]}/{data_str[0:4]}"
+    data_str = data_str.strip()
+    if len(data_str) == 8 and data_str.isdigit():
+        return f"{data_str[6:8]}/{data_str[4:6]}/{data_str[0:4]}"
+    return ""
 
-# Leggi e unisci i file
 def leggi_file(file_path):
     if not os.path.exists(file_path):
         print(f"❌ File non trovato: {file_path}")
@@ -32,31 +23,38 @@ def leggi_file(file_path):
 righe = leggi_file(file1) + leggi_file(file2)
 
 dati = []
-for riga in righe:
-    if len(riga) < 90:
-        continue
-    tipo_op = riga[62:64]
+for i, riga in enumerate(righe):
+    if len(riga) < 81:
+        continue  # Righe troppo corte
+
+    tipo_op = riga[62:64].strip()
     if tipo_op == "SD":
+        continue  # Elimina righe con SD
+
+    try:
+        polizza = riga[0:11].strip()
+        garanzia = riga[0:16].strip()
+        fondo = riga[16:35].strip()
+        comm_str = riga[35:62].strip().replace(',', '.')
+        commissioni = round(float(comm_str) / 10_000_000, 8) if comm_str else 0.0
+        data_effetto = converti_data(riga[64:72])
+        data_competenza = converti_data(riga[72:81])
+    except Exception as e:
+        print(f"Errore alla riga {i+1}: {e}")
         continue
-    polizza = riga[0:11].strip()
-    garanzia = riga[0:16].strip()
-    fondo = riga[16:35].strip()
-    commissioni = round(float(riga[35:62].strip() or 0) / 10_000_000, 8)
-    data_effetto = converti_data(riga[64:72])
-    data_competenza = converti_data(riga[72:81])
-    
+
     dati.append([
         polizza, garanzia, fondo, commissioni, tipo_op,
         data_effetto, data_competenza
     ])
 
-# Crea DataFrame con intestazioni
+# Crea DataFrame
 df = pd.DataFrame(dati, columns=[
     "Polizza", "Garanzia", "Fondo", "Commissioni",
     "Tipo operazione", "Data effetto", "Data competenza"
 ])
 
-# Salva il file Excel
 df.to_excel(output_file, index=False)
-print(f"✅ File Excel creato: {output_file}")
+print(f"✅ File creato: {output_file}")
+
 
