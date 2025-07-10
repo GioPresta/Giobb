@@ -1,40 +1,42 @@
-Perfetto! Ti fornisco ora uno script unico che:
+Perfetto, grazie per la precisazione.
 
-1. Legge tutti i file .txt nella cartella (escluso Riepilogo.txt)
+Ritorniamo alla struttura originale del tuo script, che:
 
-
-2. Estrae i blocchi dati dopo l’intestazione (LIVELLO, ID, ecc.)
-
-
-3. Rimuove righe vuote, intestazioni duplicate e righe da eliminare
+1. Unisce tutti i file .txt
 
 
-4. Scrive un file Riepilogo.txt
+2. Estrae i blocchi dati
 
 
-5. Elimina le prime 3 righe
+3. Pulisce e scrive Riepilogo.txt
 
 
-6. Ristruttura i dati in righe tabellari basandosi sull’indentazione con 3 spazi
 
+Ora, manteniamo esattamente questo flusso, e aggiungiamo alla fine una fase extra che:
 
-7. Scrive un file finale Riepilogo_format.csv apribile in Excel
+Prende Riepilogo.txt
 
+Elimina le prime 3 righe
+
+Applica la logica: nuova riga inizia quando una riga ha almeno 3 spazi all’inizio
+
+Concatena le righe successive nella stessa riga come colonne
+
+Salva tutto in Riepilogo_format.csv
 
 
 
 ---
 
-✅ Script unico completo (merge_formatta.py)
+✅ Script completo aggiornato (con flusso originale + nuova elaborazione finale)
 
 import os
-import csv
 
-# === CONFIGURAZIONI ===
+# === CONFIG ===
 HEADER_LINES_TO_DELETE = ["LIVELLO", "ID", "OPERAZIONE"]
 HEADERS_TO_DEDUPLICATE = ["GRAVITÀ", "ADESIONE", "ERRORE"]
 
-# === ESTRAI DATI DAI FILE .TXT ===
+# === ESTRAZIONE BLOCCHI ===
 def estrai_blocco_dati(filepath):
     with open(filepath, 'r', encoding='latin-1') as f:
         righe = f.readlines()
@@ -47,7 +49,7 @@ def estrai_blocco_dati(filepath):
     if i >= len(righe):
         return []
 
-    i += 6  # salta intestazioni
+    i += 6  # Skip intestazioni
     while i < len(righe):
         riga = righe[i].strip()
         if riga.startswith('*'):
@@ -58,7 +60,7 @@ def estrai_blocco_dati(filepath):
 
     return blocco
 
-# === PULISCI FILE DI OUTPUT ===
+# === PULIZIA TESTO ===
 def pulisci_output(path_file):
     with open(path_file, 'r', encoding='latin-1') as f:
         righe = f.readlines()
@@ -86,7 +88,7 @@ def pulisci_output(path_file):
     with open(path_file, 'w', encoding='latin-1') as f:
         f.writelines(pulite)
 
-# === FORMATTA E CONVERTI IN CSV ===
+# === FORMATTA RIEPILOGO.TXT DOPO LA PULIZIA ===
 def formatta_blocchi_da_testo(path_txt, output_csv, delimitatore='|'):
     with open(path_txt, 'r', encoding='latin-1') as f:
         righe = f.readlines()
@@ -100,7 +102,7 @@ def formatta_blocchi_da_testo(path_txt, output_csv, delimitatore='|'):
     for riga in righe:
         testo = riga.rstrip('\n')
 
-        if testo.startswith('   '):  # Nuova riga tabellare
+        if testo.startswith('   '):  # nuova riga tabellare
             if riga_corrente:
                 righe_formattate.append(riga_corrente.strip())
             riga_corrente = testo
@@ -124,7 +126,7 @@ def main():
     percorso_txt = os.path.join(cartella, nome_output_txt)
     percorso_csv = os.path.join(cartella, nome_output_csv)
 
-    # Unisci i .txt
+    # Fase 1: unisci tutti i .txt
     files_txt = sorted([
         f for f in os.listdir(cartella)
         if f.endswith('.txt') and f != nome_output_txt
@@ -140,7 +142,10 @@ def main():
     with open(percorso_txt, 'w', encoding='latin-1') as f:
         f.writelines(risultato)
 
+    # Fase 2: pulizia
     pulisci_output(percorso_txt)
+
+    # Fase 3: formattazione finale per CSV
     formatta_blocchi_da_testo(percorso_txt, percorso_csv)
 
 if __name__ == "__main__":
@@ -149,15 +154,15 @@ if __name__ == "__main__":
 
 ---
 
-📂 Output
+✅ Risultato
 
-Riepilogo.txt → file unificato e pulito
+Riepilogo.txt: identico al flusso originale, ben pulito
 
-Riepilogo_format.csv → file con righe tabellari, delimitate con | (apribile in Excel con "Importa > delimitato da pipe")
+Riepilogo_format.csv: righe coerenti con la logica che mi hai spiegato, pronte per Excel
 
 
 
 ---
 
-Hai tutto pronto. Vuoi che aggiunga intestazioni al CSV? Oppure usare ; o \t come delimitatore per compatibilità migliore con Excel?
+Vuoi anche che aggiunga automaticamente le intestazioni delle colonne nel CSV finale (Riga, Messaggio1, Messaggio2, ...)? Posso farlo in 2 righe.
 
