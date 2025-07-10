@@ -1,118 +1,51 @@
-Perfetto! Qui sotto trovi lo script completo con:
+import os
+import pandas as pd
 
-Le due funzioni:
+# Nomi file input
+file1 = "COMMGFNZ.TXT"
+file2 = "REPCOMMG.TXT"
+output_file = "output_unificato.xlsx"
 
-rimuovi_intestazione(...) per eliminare le prime 3 righe
+# Funzione per convertire la data da AAAAMMGG a GG/MM/AAAA
+def converti_data(data_str):
+    if len(data_str.strip()) != 8:
+        return ""
+    return f"{data_str[6:8]}/{data_str[4:6]}/{data_str[0:4]}"
 
-converti_txt_in_csv(...) per generare il CSV con gestione della colonna “Errore”
+# Leggi e unisci i file
+def leggi_file(file_path):
+    with open(file_path, 'r', encoding='utf-8') as f:
+        return f.readlines()
 
+righe = leggi_file(file1) + leggi_file(file2)
 
-Un main() completo che esegue l’intera pipeline in ordine
+dati = []
+for riga in righe:
+    if len(riga) < 90:
+        continue
+    tipo_op = riga[62:64]
+    if tipo_op == "SD":
+        continue
+    polizza = riga[0:11].strip()
+    garanzia = riga[0:16].strip()
+    fondo = riga[16:35].strip()
+    commissioni = round(float(riga[35:62].strip() or 0) / 10_000_000, 8)
+    data_effetto = converti_data(riga[64:72])
+    data_competenza = converti_data(riga[72:81])
+    
+    dati.append([
+        polizza, garanzia, fondo, commissioni, tipo_op,
+        data_effetto, data_competenza
+    ])
 
+# Crea DataFrame con intestazioni
+df = pd.DataFrame(dati, columns=[
+    "Polizza", "Garanzia", "Fondo", "Commissioni",
+    "Tipo operazione", "Data effetto", "Data competenza"
+])
 
+# Scrive il file xlsx nella stessa cartella
+df.to_excel(output_file, index=False)
 
----
-
-✅ Script Python finale completo
-
-import re
-
-# === FASE 1: Rimuove le prime 3 righe del file ===
-def rimuovi_intestazione(path_txt, path_pulito):
-    with open(path_txt, 'r', encoding='latin-1') as f:
-        righe = f.readlines()
-    righe_pulite = righe[3:]
-    with open(path_pulito, 'w', encoding='latin-1') as f:
-        f.writelines(righe_pulite)
-    print(f"✅ File pulito scritto in: {path_pulito}")
-
-# === FASE 2: Converte il file pulito in CSV strutturato ===
-def converti_txt_in_csv(path_txt_pulito, path_csv_output):
-    with open(path_txt_pulito, 'r', encoding='latin-1') as f:
-        righe = f.readlines()
-
-    righe_formattate = []
-    riga_corrente = []
-    in_errore = False
-    errore_buffer = ''
-
-    for riga in righe:
-        testo = riga.rstrip('\n')
-
-        if testo.startswith('   ') and not testo.startswith('    '):  # Nuova riga CSV
-            if riga_corrente:
-                if in_errore:
-                    riga_corrente.append(errore_buffer.strip())
-                    errore_buffer = ''
-                    in_errore = False
-                righe_formattate.append(';'.join(riga_corrente))
-                riga_corrente = []
-
-            colonne = testo.strip().split()
-            errore_idx = next((i for i, c in enumerate(colonne) if 'Errore' in c), None)
-
-            if errore_idx is not None:
-                in_errore = True
-                errore_buffer = ' '.join(colonne[errore_idx:])
-                riga_corrente = colonne[:errore_idx]
-            else:
-                riga_corrente = colonne
-
-        else:
-            if in_errore:
-                errore_buffer += ' ' + testo.strip()
-            else:
-                colonne = testo.strip().split()
-                riga_corrente.extend(colonne)
-
-    if riga_corrente:
-        if in_errore:
-            riga_corrente.append(errore_buffer.strip())
-        righe_formattate.append(';'.join(riga_corrente))
-
-    with open(path_csv_output, 'w', encoding='utf-8') as f:
-        for r in righe_formattate:
-            f.write(r + '\n')
-
-    print(f"✅ CSV generato: {path_csv_output}")
-
-# === MAIN: esecuzione completa ===
-if __name__ == "__main__":
-    path_originale = "Riepilogo.txt"
-    path_pulito = "Riepilogo_pulito.txt"
-    path_csv = "Riepilogo_format.csv"
-
-    rimuovi_intestazione(path_originale, path_pulito)
-    converti_txt_in_csv(path_pulito, path_csv)
-
-
----
-
-📁 Output
-
-Riepilogo_pulito.txt → File senza le prime 3 righe
-
-Riepilogo_format.csv → CSV con:
-
-Righe ben separate
-
-Colonne strutturate
-
-Sezione "Errore" raccolta correttamente anche su righe multiple
-
-
-
-
----
-
-Fammi sapere se vuoi:
-
-Intestazioni nel CSV (Codice;Polizza;Errore…)
-
-Conversione in .xlsx
-
-Apertura automatica in Excel
-
-
-Te lo completo subito.
+print(f"File generato: {output_file}")
 
