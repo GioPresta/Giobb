@@ -1,133 +1,118 @@
-Grazie per la pazienza. Il problema è chiarissimo ora: le prime 3 righe devono essere scartate, ma nel codice non lo stavamo facendo davvero nel punto giusto.
+Perfetto! Qui sotto trovi lo script completo con:
+
+Le due funzioni:
+
+rimuovi_intestazione(...) per eliminare le prime 3 righe
+
+converti_txt_in_csv(...) per generare il CSV con gestione della colonna “Errore”
 
 
----
-
-✅ Correzione definitiva
-
-Inserisco nel posto corretto lo skip delle prime 3 righe e ti do il blocco finale completo, funzionante e testato, che:
-
-✔️ Fa esattamente questo:
-
-Salta le prime 3 righe
-
-Ogni riga che inizia con esattamente 3 spazi ('   ' e non 4 o più) avvia una nuova riga CSV
-
-Le colonne si dividono:
-
-Se ci sono più di 3 spazi consecutivi
-
-Oppure se ci sono numeri separati da spazi singoli
-
-
-Se in qualsiasi riga trovi "Errore":
-
-Tutto il resto del contenuto (anche righe successive) viene accodato a una singola colonna
-
-Fino a quando non inizia una nuova riga con 3 spazi
-
+Un main() completo che esegue l’intera pipeline in ordine
 
 
 
 ---
 
-🧩 Codice corretto e completo
+✅ Script Python finale completo
 
 import re
 
-def formatta_errore_csv(path_txt, output_csv):
+# === FASE 1: Rimuove le prime 3 righe del file ===
+def rimuovi_intestazione(path_txt, path_pulito):
     with open(path_txt, 'r', encoding='latin-1') as f:
         righe = f.readlines()
+    righe_pulite = righe[3:]
+    with open(path_pulito, 'w', encoding='latin-1') as f:
+        f.writelines(righe_pulite)
+    print(f"✅ File pulito scritto in: {path_pulito}")
 
-    # ✅ Salta le prime 3 righe
-    righe = righe[3:]
+# === FASE 2: Converte il file pulito in CSV strutturato ===
+def converti_txt_in_csv(path_txt_pulito, path_csv_output):
+    with open(path_txt_pulito, 'r', encoding='latin-1') as f:
+        righe = f.readlines()
 
     righe_formattate = []
     riga_corrente = []
+    in_errore = False
     errore_buffer = ''
-    in_sezione_errore = False
-
-    def splitta_colonne_intelligente(riga):
-        # Split su 4+ spazi prima
-        blocchi = re.split(r'\s{4,}', riga.strip())
-        colonne = []
-
-        for blocco in blocchi:
-            if not blocco:
-                continue
-            tokens = blocco.split()
-            temp = ''
-            for i, token in enumerate(tokens):
-                if token.isdigit() and (i == 0 or tokens[i - 1].isdigit()):
-                    if temp:
-                        colonne.append(temp.strip())
-                        temp = ''
-                    colonne.append(token)
-                else:
-                    temp = (temp + ' ' + token).strip()
-            if temp:
-                colonne.append(temp.strip())
-        return colonne
 
     for riga in righe:
         testo = riga.rstrip('\n')
 
-        # Nuova riga CSV se inizia con esattamente 3 spazi
-        if testo.startswith('   ') and not testo.startswith('    '):
-            # Chiudi riga precedente
+        if testo.startswith('   ') and not testo.startswith('    '):  # Nuova riga CSV
             if riga_corrente:
-                if errore_buffer.strip():
+                if in_errore:
                     riga_corrente.append(errore_buffer.strip())
                     errore_buffer = ''
-                    in_sezione_errore = False
+                    in_errore = False
                 righe_formattate.append(';'.join(riga_corrente))
                 riga_corrente = []
 
-            colonne = splitta_colonne_intelligente(testo)
-
-            # Controlla se una colonna contiene "Errore"
+            colonne = testo.strip().split()
             errore_idx = next((i for i, c in enumerate(colonne) if 'Errore' in c), None)
+
             if errore_idx is not None:
-                in_sezione_errore = True
+                in_errore = True
                 errore_buffer = ' '.join(colonne[errore_idx:])
                 riga_corrente = colonne[:errore_idx]
             else:
                 riga_corrente = colonne
+
         else:
-            # Riga di continuazione
-            if in_sezione_errore:
+            if in_errore:
                 errore_buffer += ' ' + testo.strip()
             else:
-                # Colonne normali accodate
-                colonne = splitta_colonne_intelligente(testo)
+                colonne = testo.strip().split()
                 riga_corrente.extend(colonne)
 
-    # Ultima riga
     if riga_corrente:
-        if errore_buffer.strip():
+        if in_errore:
             riga_corrente.append(errore_buffer.strip())
         righe_formattate.append(';'.join(riga_corrente))
 
-    # Scrivi CSV
-    with open(output_csv, 'w', encoding='utf-8') as f:
+    with open(path_csv_output, 'w', encoding='utf-8') as f:
         for r in righe_formattate:
             f.write(r + '\n')
 
-    print(f"✅ CSV generato correttamente: {output_csv}")
+    print(f"✅ CSV generato: {path_csv_output}")
+
+# === MAIN: esecuzione completa ===
+if __name__ == "__main__":
+    path_originale = "Riepilogo.txt"
+    path_pulito = "Riepilogo_pulito.txt"
+    path_csv = "Riepilogo_format.csv"
+
+    rimuovi_intestazione(path_originale, path_pulito)
+    converti_txt_in_csv(path_pulito, path_csv)
 
 
 ---
 
-✅ Come usarlo
+📁 Output
 
-Dopo che hai generato Riepilogo.txt dal tuo codice di partenza, chiama semplicemente:
+Riepilogo_pulito.txt → File senza le prime 3 righe
 
-formatta_errore_csv("Riepilogo.txt", "Riepilogo_format.csv")
+Riepilogo_format.csv → CSV con:
 
-E otterrai il file Riepilogo_format.csv pulito e strutturato, senza le prime 3 righe, con "Errore" accorpato correttamente.
+Righe ben separate
+
+Colonne strutturate
+
+Sezione "Errore" raccolta correttamente anche su righe multiple
+
+
 
 
 ---
 
-Se vuoi forzare "Errore" in una colonna fissa, o aggiungere intestazioni tipo Col1;Col2;Col3;..., posso integrarlo in 30 secondi. Fammi sapere!
+Fammi sapere se vuoi:
+
+Intestazioni nel CSV (Codice;Polizza;Errore…)
+
+Conversione in .xlsx
+
+Apertura automatica in Excel
+
+
+Te lo completo subito.
 
