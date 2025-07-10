@@ -1,36 +1,53 @@
+Perfetto! Ti fornisco ora uno script unico che:
+
+1. Legge tutti i file .txt nella cartella (escluso Riepilogo.txt)
+
+
+2. Estrae i blocchi dati dopo l’intestazione (LIVELLO, ID, ecc.)
+
+
+3. Rimuove righe vuote, intestazioni duplicate e righe da eliminare
+
+
+4. Scrive un file Riepilogo.txt
+
+
+5. Elimina le prime 3 righe
+
+
+6. Ristruttura i dati in righe tabellari basandosi sull’indentazione con 3 spazi
+
+
+7. Scrive un file finale Riepilogo_format.csv apribile in Excel
+
+
+
+
+---
+
+✅ Script unico completo (merge_formatta.py)
+
 import os
 import csv
 
 # === CONFIGURAZIONI ===
-HEADER_LINES_TO_DELETE = [
-    "LIVELLO",
-    "ID",
-    "OPERAZIONE"
-]
+HEADER_LINES_TO_DELETE = ["LIVELLO", "ID", "OPERAZIONE"]
+HEADERS_TO_DEDUPLICATE = ["GRAVITÀ", "ADESIONE", "ERRORE"]
 
-HEADERS_TO_DEDUPLICATE = [
-    "GRAVITÀ",
-    "ADESIONE",
-    "ERRORE"
-]
-
-# === FUNZIONI ===
-
+# === ESTRAI DATI DAI FILE .TXT ===
 def estrai_blocco_dati(filepath):
     with open(filepath, 'r', encoding='latin-1') as f:
         righe = f.readlines()
 
     blocco = []
     i = 0
-
     while i < len(righe) and 'LIVELLO' not in righe[i]:
         i += 1
 
     if i >= len(righe):
         return []
 
-    i += 6  # salta righe successive all'intestazione
-
+    i += 6  # salta intestazioni
     while i < len(righe):
         riga = righe[i].strip()
         if riga.startswith('*'):
@@ -41,6 +58,7 @@ def estrai_blocco_dati(filepath):
 
     return blocco
 
+# === PULISCI FILE DI OUTPUT ===
 def pulisci_output(path_file):
     with open(path_file, 'r', encoding='latin-1') as f:
         righe = f.readlines()
@@ -51,18 +69,14 @@ def pulisci_output(path_file):
     for riga in righe:
         testo = riga.strip()
 
-        if not testo:
-            continue
-        if testo.startswith('*'):
-            continue
-        if set(testo).issubset(set(' ')):
+        if not testo or testo.startswith('*') or set(testo).issubset(set(' ')):
             continue
 
         if any(testo.startswith(prefix) for prefix in HEADER_LINES_TO_DELETE):
             continue
 
         if any(testo.startswith(h) for h in HEADERS_TO_DEDUPLICATE):
-            header = next((h for h in HEADERS_TO_DEDUPLICATE if testo.startswith(h)), None)
+            header = next(h for h in HEADERS_TO_DEDUPLICATE if testo.startswith(h))
             if header in intestazioni_trovate:
                 continue
             intestazioni_trovate.add(header)
@@ -72,52 +86,48 @@ def pulisci_output(path_file):
     with open(path_file, 'w', encoding='latin-1') as f:
         f.writelines(pulite)
 
-def converti_fixed_width_in_csv(input_txt, output_csv):
-    # Colonne da: 0-8, 8-28, ..., 360-378
-    column_widths = [
-        8,   # 0–8
-        20,  # 8–28
-        31,  # 28–59
-        24,  # 59–83
-        42,  # 83–125
-        25,  # 125–150
-        10,  # 150–160
-        10,  # 160–170
-        102, # 170–272
-        9,   # 272–281
-        10,  # 281–291
-        19,  # 291–310
-        20,  # 310–330
-        15,  # 330–345
-        15,  # 345–360
-        18   # 360–378
-    ]
+# === FORMATTA E CONVERTI IN CSV ===
+def formatta_blocchi_da_testo(path_txt, output_csv, delimitatore='|'):
+    with open(path_txt, 'r', encoding='latin-1') as f:
+        righe = f.readlines()
 
-    def split_fixed_width(line, widths):
-        fields = []
-        start = 0
-        for width in widths:
-            fields.append(line[start:start+width].strip())
-            start += width
-        return fields
+    # Elimina le prime 3 righe
+    righe = righe[3:]
 
-    with open(input_txt, 'r', encoding='latin-1') as f_in, open(output_csv, 'w', newline='', encoding='utf-8') as f_out:
-        writer = csv.writer(f_out)
-        for line in f_in:
-            if line.strip():
-                row = split_fixed_width(line, column_widths)
-                writer.writerow(row)
+    righe_formattate = []
+    riga_corrente = ''
+
+    for riga in righe:
+        testo = riga.rstrip('\n')
+
+        if testo.startswith('   '):  # Nuova riga tabellare
+            if riga_corrente:
+                righe_formattate.append(riga_corrente.strip())
+            riga_corrente = testo
+        else:
+            riga_corrente += f'{delimitatore}{testo.strip()}'
+
+    if riga_corrente:
+        righe_formattate.append(riga_corrente.strip())
+
+    with open(output_csv, 'w', encoding='utf-8') as f:
+        for r in righe_formattate:
+            f.write(r + '\n')
+
+    print(f"✅ File CSV finale generato: {output_csv}")
 
 # === MAIN ===
-
 def main():
     cartella = os.path.dirname(os.path.abspath(__file__))
-    nome_output = "Riepilogo.txt"
-    percorso_output = os.path.join(cartella, nome_output)
+    nome_output_txt = "Riepilogo.txt"
+    nome_output_csv = "Riepilogo_format.csv"
+    percorso_txt = os.path.join(cartella, nome_output_txt)
+    percorso_csv = os.path.join(cartella, nome_output_csv)
 
+    # Unisci i .txt
     files_txt = sorted([
         f for f in os.listdir(cartella)
-        if f.endswith('.txt') and f != nome_output
+        if f.endswith('.txt') and f != nome_output_txt
     ])
 
     risultato = []
@@ -127,13 +137,27 @@ def main():
             risultato.extend(blocco)
             risultato.append('\n')
 
-    with open(percorso_output, 'w', encoding='latin-1') as f:
+    with open(percorso_txt, 'w', encoding='latin-1') as f:
         f.writelines(risultato)
 
-    pulisci_output(percorso_output)
-    converti_fixed_width_in_csv(percorso_output, "Riepilogo.csv")
-    print("✅ Riepilogo.csv generato correttamente!")
+    pulisci_output(percorso_txt)
+    formatta_blocchi_da_testo(percorso_txt, percorso_csv)
 
 if __name__ == "__main__":
     main()
+
+
+---
+
+📂 Output
+
+Riepilogo.txt → file unificato e pulito
+
+Riepilogo_format.csv → file con righe tabellari, delimitate con | (apribile in Excel con "Importa > delimitato da pipe")
+
+
+
+---
+
+Hai tutto pronto. Vuoi che aggiunga intestazioni al CSV? Oppure usare ; o \t come delimitatore per compatibilità migliore con Excel?
 
