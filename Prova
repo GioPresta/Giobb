@@ -1,43 +1,49 @@
-Perfetto! Ora la logica è completamente chiara, te la sintetizzo una volta per tutte e poi ti do il blocco Python definitivo che rispetta esattamente le tue regole.
+Grazie! Adesso è chiarissimo anche il contesto semantico:
+vogliamo massima fedeltà alla struttura logica, non ai semplici spazi.
 
 
 ---
 
-✅ LOGICA DEFINITIVA
+✅ Aggiornamento definitivo: Colonne solo da 4+ spazi, ma una volta sola
 
-🔹 1. Nuova riga CSV
-
-Una riga del file .txt diventa nuova riga nel .csv solo se:
-
-Inizia con esattamente 3 spazi ('   ')
+Ecco la nuova logica finale consolidata:
 
 
-Tutte le righe successive che non iniziano con 3 spazi:
+---
 
-Appartengono alla stessa riga CSV
+🧠 Logica CSV
 
-Appartengono alla stessa colonna (vengono concatenate nella stessa cella)
+1. Nuova riga CSV:
+
+Solo se la riga inizia con esattamente 3 spazi
 
 
 
-🔹 2. Colonne
+2. Colonne:
 
-L’unico modo per separare in più colonne è nella riga che inizia con 3 spazi
+Si dividono solo una volta, nella riga iniziale (3 spazi) e solo su 4 o più spazi consecutivi
 
-In quella riga:
+Ma solo nella prima riga della voce: le righe successive non si splittano
 
-Si fa split in colonne solo se ci sono almeno 4 spazi consecutivi
-
-Frasi come ;  o .  non separano colonne
+Le righe successive vanno interamente nella colonna finale della riga iniziale (concatenate)
 
 
-Le righe successive vanno tutte nella stessa colonna finale della riga precedente
+
+3. Mai dividere:
+
+Frasi come:
+"Errore Bloccante da prodotto ; java.lang"
+"      $ questa dovrebbe essere ancora la stessa colonna"
+
+devono rimanere in un'unica colonna, anche se contengono simboli o spazi
+
+
 
 
 
 ---
 
-🧩 BLOCCO PYTHON DEFINITIVO
+✅ BLOCCO DEFINITIVO (robusto e preciso)
 
 import re
 
@@ -45,14 +51,14 @@ def formatta_blocchi_da_testo(path_txt, output_csv):
     with open(path_txt, 'r', encoding='latin-1') as f:
         righe = f.readlines()
 
-    righe = righe[3:]  # Elimina prime 3 righe
+    righe = righe[3:]  # Elimina le prime 3 righe
 
     righe_formattate = []
     riga_corrente = []
-    colonna_accumulata = ''  # Contenuto multilinea per l'ultima colonna
+    colonna_accumulata = ''  # Testo multilinea concatenato
 
-    def splitta_riga_in_colonne(riga):
-        # Split solo su 4 o più spazi
+    def splitta_prima_riga(riga):
+        # Split SOLO su 4 o più spazi, UNA VOLTA nella riga iniziale
         return [col.strip() for col in re.split(r'\s{4,}', riga.strip()) if col.strip()]
 
     for riga in righe:
@@ -60,72 +66,37 @@ def formatta_blocchi_da_testo(path_txt, output_csv):
 
         if testo.startswith('   ') and not testo.startswith('    '):  # Nuova riga CSV
             if riga_corrente:
-                # Aggiungi contenuto multilinea se presente
                 if colonna_accumulata.strip():
                     riga_corrente.append(colonna_accumulata.strip())
                 righe_formattate.append(';'.join(riga_corrente))
-            # Ricomincia nuova riga
-            riga_corrente = splitta_riga_in_colonne(testo)
+            # Nuova riga, reset
+            riga_corrente = splitta_prima_riga(testo)
             colonna_accumulata = ''
         else:
-            # Riga di continuazione: va nella stessa ultima colonna
+            # Riga di continuazione → tutta nella colonna finale
             colonna_accumulata += ' ' + testo.strip()
 
-    # Ultima riga finale
+    # Ultima riga
     if riga_corrente:
         if colonna_accumulata.strip():
             riga_corrente.append(colonna_accumulata.strip())
         righe_formattate.append(';'.join(riga_corrente))
 
-    # Scrittura su CSV
+    # Scrittura su file CSV
     with open(output_csv, 'w', encoding='utf-8') as f:
-        for r in righe_formattate:
-            f.write(r + '\n')
+        for riga in righe_formattate:
+            f.write(riga + '\n')
 
     print(f"✅ CSV generato con successo: {output_csv}")
 
 
 ---
 
-📌 Comportamento finale
+🧪 Esempio chiave
 
-Le colonne sono create solo dalla riga che inizia con 3 spazi usando \s{4,} (quattro o più spazi)
+Input:
 
-Tutte le righe successive, anche se contengono . ; :, ecc.:
-
-Vanno nell'ultima colonna di quella riga
-
-Vengono concatenate come un unico testo
-
-
-
-
----
-
-🧪 Esempio
-
-Input .txt:
-
-3    000000001    Codice Errore   ALTRO
-Dettaglio errore con valori
-Altro testo aggiuntivo
-   5    000000002    Errore diverso
-Altro dettaglio
-
-Output .csv:
-
-3;000000001;Codice Errore;ALTRO;Dettaglio errore con valori Altro testo aggiuntivo
-5;000000002;Errore diverso;Altro dettaglio
-
-
----
-
-Vuoi anche:
-
-Rimuovere eventuali \n nel contenuto concatenato?
-
-Limitare il numero massimo di colonne?
-
-
-Fammi sapere e te lo rifinisco.
+3    00000001    Errore Bloccante da prodotto ; java.lang
+      $ questa dovrebbe essere ancora la stessa colonna
+   5    00000002
 
