@@ -1,95 +1,29 @@
-Perfetto, grazie per la precisazione.
-
-Ritorniamo alla struttura originale del tuo script, che:
-
-1. Unisce tutti i file .txt
+Perfetto! Allora specifichiamo:
 
 
-2. Estrae i blocchi dati
+---
 
-
-3. Pulisce e scrive Riepilogo.txt
-
-
-
-Ora, manteniamo esattamente questo flusso, e aggiungiamo alla fine una fase extra che:
-
-Prende Riepilogo.txt
+✅ Regole aggiornate
 
 Elimina le prime 3 righe
 
-Applica la logica: nuova riga inizia quando una riga ha almeno 3 spazi all’inizio
+Una riga inizia una nuova riga CSV solo se inizia con esattamente 3 spazi → text.startswith('   ') and not text.startswith('    ')
 
-Concatena le righe successive nella stessa riga come colonne
+Le colonne sono delimitate da almeno 3 spazi consecutivi → re.split(r'\s{3,}', ...)
 
-Salva tutto in Riepilogo_format.csv
+Le righe che non iniziano con esattamente 3 spazi sono da concatenare alla riga corrente, come colonne successive
+
+Il CSV usa il punto e virgola ; come separatore
 
 
 
 ---
 
-✅ Script completo aggiornato (con flusso originale + nuova elaborazione finale)
+🧩 Blocco Python aggiornato (da aggiungere al tuo script)
 
-import os
+import re
 
-# === CONFIG ===
-HEADER_LINES_TO_DELETE = ["LIVELLO", "ID", "OPERAZIONE"]
-HEADERS_TO_DEDUPLICATE = ["GRAVITÀ", "ADESIONE", "ERRORE"]
-
-# === ESTRAZIONE BLOCCHI ===
-def estrai_blocco_dati(filepath):
-    with open(filepath, 'r', encoding='latin-1') as f:
-        righe = f.readlines()
-
-    blocco = []
-    i = 0
-    while i < len(righe) and 'LIVELLO' not in righe[i]:
-        i += 1
-
-    if i >= len(righe):
-        return []
-
-    i += 6  # Skip intestazioni
-    while i < len(righe):
-        riga = righe[i].strip()
-        if riga.startswith('*'):
-            break
-        if not set(riga).issubset(set(' ')):
-            blocco.append(righe[i])
-        i += 1
-
-    return blocco
-
-# === PULIZIA TESTO ===
-def pulisci_output(path_file):
-    with open(path_file, 'r', encoding='latin-1') as f:
-        righe = f.readlines()
-
-    pulite = []
-    intestazioni_trovate = set()
-
-    for riga in righe:
-        testo = riga.strip()
-
-        if not testo or testo.startswith('*') or set(testo).issubset(set(' ')):
-            continue
-
-        if any(testo.startswith(prefix) for prefix in HEADER_LINES_TO_DELETE):
-            continue
-
-        if any(testo.startswith(h) for h in HEADERS_TO_DEDUPLICATE):
-            header = next(h for h in HEADERS_TO_DEDUPLICATE if testo.startswith(h))
-            if header in intestazioni_trovate:
-                continue
-            intestazioni_trovate.add(header)
-
-        pulite.append(riga)
-
-    with open(path_file, 'w', encoding='latin-1') as f:
-        f.writelines(pulite)
-
-# === FORMATTA RIEPILOGO.TXT DOPO LA PULIZIA ===
-def formatta_blocchi_da_testo(path_txt, output_csv, delimitatore='|'):
+def formatta_blocchi_da_testo(path_txt, output_csv):
     with open(path_txt, 'r', encoding='latin-1') as f:
         righe = f.readlines()
 
@@ -97,72 +31,40 @@ def formatta_blocchi_da_testo(path_txt, output_csv, delimitatore='|'):
     righe = righe[3:]
 
     righe_formattate = []
-    riga_corrente = ''
+    riga_corrente = []
 
     for riga in righe:
         testo = riga.rstrip('\n')
 
-        if testo.startswith('   '):  # nuova riga tabellare
+        # Se inizia con ESATTAMENTE 3 spazi
+        if testo.startswith('   ') and not testo.startswith('    '):
             if riga_corrente:
-                righe_formattate.append(riga_corrente.strip())
-            riga_corrente = testo
+                righe_formattate.append(';'.join(riga_corrente))
+            riga_corrente = [col.strip() for col in re.split(r'\s{3,}', testo.strip()) if col.strip()]
         else:
-            riga_corrente += f'{delimitatore}{testo.strip()}'
+            nuove_colonne = [col.strip() for col in re.split(r'\s{3,}', testo.strip()) if col.strip()]
+            riga_corrente.extend(nuove_colonne)
 
     if riga_corrente:
-        righe_formattate.append(riga_corrente.strip())
+        righe_formattate.append(';'.join(riga_corrente))
 
     with open(output_csv, 'w', encoding='utf-8') as f:
-        for r in righe_formattate:
-            f.write(r + '\n')
+        for riga in righe_formattate:
+            f.write(riga + '\n')
 
-    print(f"✅ File CSV finale generato: {output_csv}")
-
-# === MAIN ===
-def main():
-    cartella = os.path.dirname(os.path.abspath(__file__))
-    nome_output_txt = "Riepilogo.txt"
-    nome_output_csv = "Riepilogo_format.csv"
-    percorso_txt = os.path.join(cartella, nome_output_txt)
-    percorso_csv = os.path.join(cartella, nome_output_csv)
-
-    # Fase 1: unisci tutti i .txt
-    files_txt = sorted([
-        f for f in os.listdir(cartella)
-        if f.endswith('.txt') and f != nome_output_txt
-    ])
-
-    risultato = []
-    for file in files_txt:
-        blocco = estrai_blocco_dati(os.path.join(cartella, file))
-        if blocco:
-            risultato.extend(blocco)
-            risultato.append('\n')
-
-    with open(percorso_txt, 'w', encoding='latin-1') as f:
-        f.writelines(risultato)
-
-    # Fase 2: pulizia
-    pulisci_output(percorso_txt)
-
-    # Fase 3: formattazione finale per CSV
-    formatta_blocchi_da_testo(percorso_txt, percorso_csv)
-
-if __name__ == "__main__":
-    main()
+    print(f"✅ CSV formattato generato correttamente: {output_csv}")
 
 
 ---
 
-✅ Risultato
+✔️ Come integrarlo
 
-Riepilogo.txt: identico al flusso originale, ben pulito
+Nel tuo main(), dopo pulisci_output(...), aggiungi:
 
-Riepilogo_format.csv: righe coerenti con la logica che mi hai spiegato, pronte per Excel
-
+formatta_blocchi_da_testo(percorso_txt, percorso_csv)
 
 
 ---
 
-Vuoi anche che aggiunga automaticamente le intestazioni delle colonne nel CSV finale (Riga, Messaggio1, Messaggio2, ...)? Posso farlo in 2 righe.
+Se vuoi anche aggiungere intestazioni, o gestire campi vuoti con placeholder (es. "" o NULL), fammi sapere!
 
