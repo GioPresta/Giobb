@@ -1,60 +1,23 @@
-import os
 import pandas as pd
 
-# Imposta cartella di lavoro
-cartella_lavoro = os.getcwd()
-file1 = os.path.join(cartella_lavoro, "COMMGFNZ.TXT")
-file2 = os.path.join(cartella_lavoro, "REPCOMMG.TXT")
-output_file = os.path.join(cartella_lavoro, "output_unificato.xlsx")
+# Leggi il file .txt, saltando la prima e l'ultima riga
+with open("input.txt", "r", encoding="utf-8") as file:
+    lines = file.readlines()[1:-1]
 
-def converti_data(data_str):
-    data_str = data_str.strip()
-    if len(data_str) == 8 and data_str.isdigit():
-        return f"{data_str[6:8]}/{data_str[4:6]}/{data_str[0:4]}"
-    return ""
+# Scrivi temporaneamente le righe filtrate in un nuovo file
+with open("temp.txt", "w", encoding="utf-8") as temp_file:
+    temp_file.writelines(lines)
 
-def leggi_file(file_path):
-    if not os.path.exists(file_path):
-        print(f"❌ File non trovato: {file_path}")
-        return []
-    with open(file_path, 'r', encoding='utf-8') as f:
-        return f.readlines()
+# Carica il file temporaneo in un DataFrame
+df = pd.read_csv("temp.txt", sep=";", header=None, dtype=str)
 
-righe = leggi_file(file1) + leggi_file(file2)
+# Sostituisci i punti con le virgole nei valori decimali
+df = df.applymap(lambda x: x.replace('.', ',') if isinstance(x, str) and x.replace('.', '', 1).isdigit() else x)
 
-dati = []
-for i, riga in enumerate(righe):
-    if len(riga) < 81:
-        continue  # Righe troppo corte
+# Seleziona le colonne desiderate (ricorda che pandas usa 0-based indexing)
+cols = [1,3,4,8,9,14,17,25,26,51,56,57,58,59,63,65,76,78,79,80,85,89,90,93,112,128,129,136]
+df_selected = df.iloc[:, cols]
 
-    tipo_op = riga[62:64].strip()
-    if tipo_op == "SD":
-        continue  # Elimina righe con SD
-
-    try:
-        polizza = riga[0:11].strip()
-        garanzia = riga[0:16].strip()
-        fondo = riga[16:35].strip()
-        comm_str = riga[35:62].strip().replace(',', '.')
-        commissioni = round(float(comm_str) / 10_000_000, 8) if comm_str else 0.0
-        data_effetto = converti_data(riga[64:72])
-        data_competenza = converti_data(riga[72:81])
-    except Exception as e:
-        print(f"Errore alla riga {i+1}: {e}")
-        continue
-
-    dati.append([
-        polizza, garanzia, fondo, commissioni, tipo_op,
-        data_effetto, data_competenza
-    ])
-
-# Crea DataFrame
-df = pd.DataFrame(dati, columns=[
-    "Polizza", "Garanzia", "Fondo", "Commissioni",
-    "Tipo operazione", "Data effetto", "Data competenza"
-])
-
-df.to_excel(output_file, index=False)
-print(f"✅ File creato: {output_file}")
-
+# Esporta in formato Excel
+df_selected.to_excel("output.xlsx", index=False, header=False)
 
