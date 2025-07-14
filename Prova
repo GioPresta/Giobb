@@ -20,12 +20,27 @@ column_indices = [i - 1 for i in columns_requested]
 column_headers = [
     "DTA_RFR", "NUM_TST", "NUM_PLZ", "CDC_TAR", "CDC_FND", "DTA_NAS_A1", "SESSO_A1", "DTA_DEC", "DTA_SCA",
     "FRZ_PRM", "RIP_PRE", "RIS_MAT", "RIS_MAT_A", "RIS_SPE", "RIS_INT_R", "RIS_AL_1", "CDC_CONV", "MIN_GAR",
-    "MIN_TRAT", "COM_MANT", "TPO_PRM", "RAMO", "FRM_TAR", "T_TCNIND_COLL", "DATA_SCAD_PREMI", "CDC_PROD", "FONDO_UTILI"
+    "MIN_TRAT", "COM_MANT", "TPO_PRM", "RAMO", "FRM_TAR", "T_TCNIND_COLL", "DATA_SCAD_PREMI", "CDC_PROD",
+    "FONDO_UTILI", "T_TCN"
 ]
 
 # Seleziona e rinomina le colonne
 df_selected = df.iloc[:, column_indices]
 df_selected.columns = column_headers
+
+# Conversione in formato data dd/mm/yyyy
+date_columns = ["DTA_RFR", "DTA_NAS_A1", "DTA_DEC", "DTA_SCA", "DATA_SCAD_PREMI"]
+for col in date_columns:
+    df_selected[col] = pd.to_datetime(df_selected[col], errors='coerce').dt.strftime("%d/%m/%Y")
+
+# Conversione in numerico
+numeric_columns = [
+    "NUM_TST", "NUM_PLZ", "CDC_FND", "FRZ_PRM", "RIP_PRE", "RIS_MAT", "RIS_MAT_A", "RIS_SPE",
+    "RIS_INT_R", "RIS_AL_1", "MIN_GAR", "MIN_TRAT", "COM_MANT", "T_TCN"
+]
+for col in numeric_columns:
+    df_selected[col] = df_selected[col].str.replace(',', '.')
+    df_selected[col] = pd.to_numeric(df_selected[col], errors='coerce')
 
 # Esporta in formato Excel
 df_selected.to_excel("output.xlsx", index=False)
