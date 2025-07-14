@@ -1,57 +1,109 @@
+Ecco il codice completo, nello stile che preferisci:
+
+
+---
+
+✅ Obiettivi
+
+Leggi un .txt separato da ;
+
+Elimina prima e ultima riga
+
+Converte i punti in virgole nei numeri
+
+Estrai le colonne specificate
+
+Usa nomi colonna personalizzati
+
+Converte alcune colonne in formato data gg/mm/aaaa (in stringa, per compatibilità 9999-12-31)
+
+Converte solo alcune colonne in valori numerici
+
+Lascia CDC_FND come stringa, anche se a volte numerica
+
+Esporta in .xlsx
+
+
+
+---
+
+✅ Codice Python aggiornato
+
 import pandas as pd
 
-# Leggi e prepara i dati
+# Leggi il file .txt, saltando la prima e l'ultima riga
 with open("input.txt", "r", encoding="utf-8") as file:
     lines = file.readlines()[1:-1]
+
+# Scrivi le righe filtrate in un nuovo file temporaneo
 with open("temp.txt", "w", encoding="utf-8") as temp_file:
     temp_file.writelines(lines)
 
+# Carica il file nel DataFrame
 df = pd.read_csv("temp.txt", sep=";", header=None, dtype=str)
+
+# Sostituisci punti con virgole nei numeri
 df = df.applymap(lambda x: x.replace('.', ',') if isinstance(x, str) and x.replace('.', '', 1).isdigit() else x)
 
+# Colonne richieste (1-based)
 columns_requested = [2, 4, 5, 9, 10, 15, 18, 26, 27, 52, 57, 58, 59, 60, 64, 66, 77, 79, 80, 81, 86, 90, 91, 94, 113, 129, 130, 137]
 column_indices = [i - 1 for i in columns_requested]
+
+# Nomi colonne
 column_headers = [
     "DTA_RFR", "NUM_TST", "NUM_PLZ", "CDC_TAR", "CDC_FND", "DTA_NAS_A1", "SESSO_A1", "DTA_DEC", "DTA_SCA",
     "FRZ_PRM", "RIP_PRE", "RIS_MAT", "RIS_MAT_A", "RIS_SPE", "RIS_INT_R", "RIS_AL_1", "CDC_CONV", "MIN_GAR",
     "MIN_TRAT", "COM_MANT", "TPO_PRM", "RAMO", "FRM_TAR", "T_TCNIND_COLL", "DATA_SCAD_PREMI", "CDC_PROD",
     "FONDO_UTILI", "T_TCN"
 ]
+
+# Estrai e rinomina le colonne
 df_selected = df.iloc[:, column_indices].copy()
 df_selected.columns = column_headers
 
-# Scrittura con xlsxwriter
-with pd.ExcelWriter("output.xlsx", engine="xlsxwriter", datetime_format='dd/mm/yyyy') as writer:
-    workbook  = writer.book
-    worksheet = workbook.add_worksheet("Foglio1")
-    writer.sheets["Foglio1"] = worksheet
+# Colonne da convertire in formato data come stringa 'gg/mm/aaaa'
+date_columns = ["DTA_RFR", "DTA_NAS_A1", "DTA_DEC", "DTA_SCA", "DATA_SCAD_PREMI"]
+for col in date_columns:
+    df_selected.loc[:, col] = df_selected[col].str.replace("-", "/")
+    df_selected.loc[:, col] = df_selected[col].str.replace(r"^(\d{4})/(\d{2})/(\d{2})$", r"\3/\2/\1", regex=True)
 
-    # Scrivi intestazioni
-    for col_idx, col_name in enumerate(df_selected.columns):
-        worksheet.write(0, col_idx, col_name)
+# Colonne numeriche (CDC_FND esclusa)
+numeric_columns = [
+    "NUM_TST", "NUM_PLZ", "FRZ_PRM", "RIP_PRE", "RIS_MAT", "RIS_MAT_A",
+    "RIS_SPE", "RIS_INT_R", "RIS_AL_1", "MIN_GAR", "MIN_TRAT", "COM_MANT", "T_TCN"
+]
+for col in numeric_columns:
+    df_selected.loc[:, col] = df_selected[col].str.replace(',', '.', regex=False)
+    df_selected.loc[:, col] = pd.to_numeric(df_selected[col], errors='coerce')
 
-    date_columns = ["DTA_RFR", "DTA_NAS_A1", "DTA_DEC", "DTA_SCA", "DATA_SCAD_PREMI"]
-    numeric_columns = [
-        "NUM_TST", "NUM_PLZ", "FRZ_PRM", "RIP_PRE", "RIS_MAT", "RIS_MAT_A",
-        "RIS_SPE", "RIS_INT_R", "RIS_AL_1", "MIN_GAR", "MIN_TRAT", "COM_MANT", "T_TCN"
-    ]
-    date_format = workbook.add_format({'num_format': 'dd/mm/yyyy'})
+# Esporta in Excel
+df_selected.to_excel("output.xlsx", index=False)
 
-    for row_idx, row in enumerate(df_selected.itertuples(index=False), start=1):
-        for col_idx, value in enumerate(row):
-            col_name = df_selected.columns[col_idx]
-            if col_name in date_columns:
-                try:
-                    y, m, d = map(int, str(value).split("-"))
-                    worksheet.write_datetime(row_idx, col_idx, pd.Timestamp(year=y, month=m, day=d), date_format)
-                except:
-                    worksheet.write(row_idx, col_idx, value)
-            elif col_name in numeric_columns:
-                try:
-                    worksheet.write_number(row_idx, col_idx, float(str(value).replace(',', '.')))
-                except:
-                    worksheet.write(row_idx, col_idx, value)
-            else:
-                worksheet.write(row_idx, col_idx, value)
+
+---
+
+✅ Riepilogo modifiche
+
+Cosa	Azione
+
+Eliminazione righe	Prima e ultima riga rimosse
+Decimali	Punto → virgola nei numeri
+Date	Riformattate in stringa gg/mm/aaaa, incluse 9999
+Colonne numeriche	Solo le specifiche, CDC_FND trattata come stringa
+Output	File output.xlsx esportato senza indice
+
+
+
+---
+
+Fammi sapere se vuoi:
+
+usare openpyxl per inserire date Excel vere,
+
+congelare intestazioni,
+
+applicare filtri,
+
+auto-larghezza colonne.
 
 
