@@ -1,38 +1,46 @@
 import os
 import pandas as pd
+from openpyxl import Workbook
 
+# ----- PARAMETRI PERSONALIZZABILI -----
 input_file = "GCA_00032_i006_BCCVITA_2025-07-31.txt"
 
-# ---- PREPARAZIONE FILE TEMPORANEO ----
+# Inserisci qui gli indici delle colonne richieste (1-based), esempio:
+columns_requested = [
+    1, 2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 26, 27,
+    52, 57, 58, 59, 60, 64, 78, 79, 80, 81, 86, 89, 91, 94, 113, 129, 130
+]
+column_indices = [i - 1 for i in columns_requested]  # Python è zero-based!
+
+# Inserisci qui i nomi colonna per l'output filtrato (deve corrispondere columns_requested)
+column_headers = [
+    "DTA_RFR", "NUL_PLZ", "CDC_TAR", "CDC_FND", "DTA_NAS_A1", "SESSO_A1", "DTA_DEC", "DTA_SCA", "DATA_SCAD_PREM1",
+    "FRZ_PRM", "RIP_PRE", "RIS_MAT_A", "RIS_MAT_I", "CDC_CONV", "MIN_GAR", "MIN_TRAT", "COL_MANT", "TPO_PRM",
+    "RAMO", "FRM_TAR", "T_TCN", "IND_COLL", "DATA_SCAD_PREMI", "CDC_PROD",  # ... continua eventualmente la lista
+]
+
+# ----- STEP 1: CREA IL FILE TEMPORANEO (SENZA PRIMA RIGA) -----
 with open(input_file, encoding="utf-8") as file:
-    lines = file.readlines()[1:]
+    lines = file.readlines()[1:]  # Skippa la prima riga
 
 with open("temp.txt", encoding="utf-8", mode="w") as temp_file:
     temp_file.writelines(lines)
 
-# ---- VECCHIO BLOCCO: PROCESSING AVANZATO + EXPORT PRIMO FILE EXCEL ----
-
-# Modifica qua le colonne (esempio dal tuo codice)
-columns_requested = [1, 2, 4, ...]  # <-- I tuoi indici reali
-column_indices = [i - 1 for i in columns_requested]
-column_headers = [
-    "DTA_RFR", "NUL_PLZ", ...     # <-- I tuoi header (quelli vecchi!)
-]
-
+# ----- STEP 2: PRIMO EXCEL - FILTRATO E FORMATTAZIONE -----
 df = pd.read_csv("temp.txt", sep='|', header=None, dtype=str)
 df_selected = df.iloc[:, column_indices].copy()
 df_selected.columns = column_headers
 
-# Gestione colonne date
+# Gestione colonne date (personalizza se servono)
 date_columns = ["DTA_RFR", "DTA_NAS_A1", "DTA_DEC", "DTA_SCA", "DATA_SCAD_PREM1"]
 for col in date_columns:
     if col in df_selected.columns:
         df_selected.loc[:, col] = df_selected[col].str.replace(".", "/")
         df_selected.loc[:, col] = df_selected[col].str.replace(r"^(\d{4})/(\d{2})/(\d{2})$", r"\3/\2/\1", regex=True)
 
-# Gestione colonne numeriche
+# Gestione colonne numeriche (personalizza se servono)
 numeric_columns = [
-    "NUL_IST", "NUL_PLZ", ...    # <-- le tue colonne numeriche
+    "NUL_IST", "NUL_PLZ", "FRZ_PRM", "RIP_PRE", "RIS_MAT_A", "MIN_GAR", "MIN_TRAT", "COM_MANT", "T_TCN"
 ]
 for col in numeric_columns:
     if col in df_selected.columns:
@@ -42,31 +50,27 @@ for col in numeric_columns:
 base_name = os.path.splitext(os.path.basename(input_file))[0]
 file1 = f"{base_name}_filtered.xlsx"
 df_selected.to_excel(file1, index=False)
-print(f"File 1 pronto: {file1}")
+print(f"File filtrato creato: {file1}")
 
-# ---- NUOVO BLOCCO: EXPORT RAW + HEADER PERSONALIZZATO ----
-
-# Rilegge dal temp.txt (tutte le colonne)
+# ----- STEP 3: SECONDO EXCEL - RAW, DOPPIO HEADER -----
 df_raw = pd.read_csv("temp.txt", sep='|', header=None, dtype=str)
 
-# PERSONALIZZA QUI i tuoi header
+# PERSONALIZZA QUI I NOMI COLONNE (deve essere della stessa lunghezza di df_raw.columns)
 custom_column_names = [
-    # "CUST1", "CUST2", ..., "CUST137"
+    # "Nome1", "Nome2", ..., "Nome137"
 ]
 if len(custom_column_names) != df_raw.shape[1]:
-    raise ValueError(f"Devi inserire {df_raw.shape[1]} nomi in custom_column_names")
+    raise ValueError(f"Inserisci {df_raw.shape[1]} nomi in custom_column_names!")
 
 excel_numbered_names = [f"Column {i+1}" for i in range(df_raw.shape[1])]
-
-from openpyxl import Workbook
 
 wb = Workbook()
 ws = wb.active
 ws.append(custom_column_names)
 ws.append(excel_numbered_names)
-for row in df_raw.values:
-    ws.append(list(row))
+for row in df_raw.values.tolist():
+    ws.append(row)
 
 file2 = f"{base_name}_raw.xlsx"
 wb.save(file2)
-print(f"File 2 pronto: {file2}")
+print(f"File raw creato: {file2}")
