@@ -1,6 +1,4 @@
-# Colonne da RIMUOVERE per il FOGLIO 1 (nome della colonna del foglio 2)
-# Esempio: se vuoi togliere "IND_COL" dal foglio 2, inserisci "IND_COL" qui
-column_to_remove = "IND_COL"  # Modifica questo nome per scegliere quale colonna togliereimport os
+import os
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
@@ -15,7 +13,7 @@ input_file = "GCA_00032_1006_BCCVITA_2025-07-31.txt"  # Modifica con il nome del
 # Inserisci qui gli indici delle colonne richieste (1-based come nel tuo codice)
 columns_requested = [
     1, 2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 
-    52, 57, 58, 59, 60, 64, 78, 79, 80, 81, 86, 89, 91, 94, 1
+    52, 57, 58, 59, 60, 64, 78, 79, 80, 81, 86, 89, 91, 94
 ]
 
 # Converti in zero-based per Python
@@ -25,8 +23,13 @@ column_indices = [i - 1 for i in columns_requested]
 column_headers = [
     "DTA_RFR", "NUL_PLZ", "CDC_TAR", "CDC_FND", "DTA_NAS_A1", 
     "FRZ_PRM", "RIP_PRE", "RIS_MAT", "RIS_MAT_I", "CDC_CNV", 
-    "RAMO", "FRM_TAR", "T_TCN", "IND_COL", "DATA_SCAD_PREMI"
+    "RAMO", "FRM_TAR", "T_TCN", "IND_COL", "DATA_SCAD_PREMI",
+    "COL16", "COL17", "COL18", "COL19", "COL20", "COL21", "COL22", 
+    "COL23", "COL24", "COL25", "COL26", "COL27", "COL28", "COL29", "COL30"
 ]
+
+# Colonne da RIMUOVERE per il FOGLIO 1 (nome della colonna del foglio 2)
+column_to_remove = "IND_COL"  # Modifica questo nome per scegliere quale colonna togliere
 
 # Colonne che contengono date (MODIFICA SE NECESSARIO)
 date_columns = ["DTA_RFR", "DTA_NAS_A1", "DTA_DEC", "DTA_SCA", "DATA_SCAD_PREMI"]
@@ -92,18 +95,59 @@ def print_progress(current, total, operation="", start_time=None):
     if current == total:
         print()  # Nuova riga alla fine
 
-Noned = pd.to_datetime(date_str, errors='coerce')
+def force_date_conversion(date_str):
+    """
+    Converte le date gestendo:
+    1. Date normali YYYY/MM/DD -> formato data Excel DD/MM/YYYY
+    2. Date speciali 31/12/9999 -> usa 31/12/9998 (data proxy valida per Excel)
+    """
+    if pd.isna(date_str) or date_str == "" or str(date_str).strip() == "":
+        return None
+    
+    date_str = str(date_str).strip()
+    
+    try:
+        # Caso speciale: 31/12/9999 (data che causa problemi in Excel)
+        # Usa 31/12/9998 come data proxy - è valida e riconoscibile
+        if "31/12/9999" in date_str or date_str == "9999/12/31" or "9999" in date_str:
+            return datetime(9998, 12, 31)
+        
+        # Gestione formato YYYY/MM/DD (il formato delle tue date normali)
+        if "/" in date_str and len(date_str.split("/")) == 3:
+            parts = date_str.split("/")
+            
+            # Se il primo numero è un anno (4 cifre), formato YYYY/MM/DD
+            if len(parts[0]) == 4 and int(parts[0]) > 1800:
+                year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+                # Controlla se è l'anno 9999 problematico
+                if year == 9999:
+                    return datetime(9998, month, day)
+                return datetime(year, month, day)
+            
+            # Se il primo numero è piccolo, formato DD/MM/YYYY
+            elif int(parts[0]) <= 31:
+                day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
+                # Controlla se è l'anno 9999 problematico
+                if year == 9999:
+                    return datetime(9998, month, day)
+                return datetime(year, month, day)
+        
+        # Prova conversione diretta pandas
+        converted = pd.to_datetime(date_str, errors='coerce')
         if pd.notna(converted):
+            # Controlla se la data convertita è 9999
+            if converted.year == 9999:
+                return datetime(9998, converted.month, converted.day)
             return converted.to_pydatetime()
     
     except Exception as e:
-        print(f"Errore nella conversione della data '{date_str}': {e}")
+        print(f"⚠️ Errore nella conversione della data '{date_str}': {e}")
         return None
     
     return None
 
 # ----- STEP 1: LETTURA E PREPROCESSING DEL FILE TXT -----
-print("🔄 Elaborazione del file: {input_file}")
+print(f"🔄 Elaborazione del file: {input_file}")
 print("ℹ️  NOTA: Le date 31/12/9999 vengono convertite in 31/12/9998 per compatibilità Excel")
 step_start = time.time()
 
@@ -186,9 +230,6 @@ if len(df_raw.columns) >= max(column_indices) + 1:
     df_sheet2 = df_raw.iloc[:, column_indices].copy()
     df_sheet2.columns = column_headers[:len(df_sheet2.columns)]
     
-    # Colonne che contengono date (MODIFICA SE NECESSARIO)
-    date_columns = ["DTA_RFR", "DTA_NAS_A1", "DTA_DEC", "DTA_SCA", "DATA_SCAD_PREMI"]
-    
     # Converti colonne date con progress
     print("🔄 Conversione colonne date...")
     date_conversion_start = time.time()
@@ -201,7 +242,6 @@ if len(df_raw.columns) >= max(column_indices) + 1:
     
     # Conversione colonne numeriche
     print("🔄 Conversione colonne numeriche...")
-    numeric_conversion_start = time.time()
     for col in numeric_columns:
         if col in df_sheet2.columns:
             df_sheet2[col] = pd.to_numeric(df_sheet2[col], errors='coerce')
@@ -223,12 +263,6 @@ if len(df_raw.columns) >= max(column_indices) + 1:
         for col_idx, (col_name, value) in enumerate(row.items(), start=1):
             if pd.isna(value) or value is None:
                 row_data.append("")
-            elif col_name in date_columns and value is not None:
-                if isinstance(value, datetime):
-                    row_data.append(value)
-                else:
-                    converted_date = force_date_conversion(value)
-                    row_data.append(converted_date)
             else:
                 row_data.append(value)
         
@@ -292,7 +326,7 @@ if len(df_raw.columns) >= max(column_indices) + 1 and 'df_sheet2' in locals():
             if col_name in date_columns:
                 for row_idx in range(3, len(df_sheet1) + 3):  # Dalla riga 3
                     cell = ws_reduced.cell(row=row_idx, column=col_idx)
-                    if cell.value is not None:
+                    if cell.value is not None and isinstance(cell.value, datetime):
                         cell.style = date_style
     else:
         print(f"❌ ERRORE: Colonna '{column_to_remove}' non trovata nel foglio 2!")
@@ -324,8 +358,10 @@ print(f"✅ Salvataggio completato in {save_time:.2f} secondi")
 print("\n🎯 PROCESSO COMPLETATO!")
 print(f"📁 File creato: {output_file}")
 print("📊 Fogli contenuti:")
-print(f"    1. 'Filtrato_Ridotto' - {len(df_sheet1.columns)} colonne (era {len(df_sheet2.columns)} nel foglio 2)")
-print(f"    2. 'Filtrato_Completo' - {len(df_sheet2.columns)} colonne")
+if 'df_sheet1' in locals():
+    print(f"    1. 'Filtrato_Ridotto' - {len(df_sheet1.columns)} colonne (era {len(df_sheet2.columns)} nel foglio 2)")
+if 'df_sheet2' in locals():
+    print(f"    2. 'Filtrato_Completo' - {len(df_sheet2.columns)} colonne")
 print(f"    3. 'RAW_Completo' - {len(df_raw.columns)} colonne")
 
 # Calcola statistiche di performance
