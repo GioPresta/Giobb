@@ -1,4 +1,6 @@
-import os
+# Colonne da RIMUOVERE per il FOGLIO 1 (nome della colonna del foglio 2)
+# Esempio: se vuoi togliere "IND_COL" dal foglio 2, inserisci "IND_COL" qui
+column_to_remove = "IND_COL"  # Modifica questo nome per scegliere quale colonna togliereimport os
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
@@ -10,21 +12,21 @@ import sys
 # ----- PARAMETRI PERSONALIZZABILI -----
 input_file = "GCA_00032_1006_BCCVITA_2025-07-31.txt"  # Modifica con il nome del tuo file
 
-# Colonne per il FOGLIO 2 (filtrato completo) - 1-based
-columns_sheet2 = [1,3,4,8,9,14,17,25,26,51,56,57,58,59,63,65,76,78,79,80,85,89,90,93,111,112,128,129,136]
-
-# Colonne da RIMUOVERE per il FOGLIO 1 (nome della colonna del foglio 2)
-# Esempio: se vuoi togliere "COD_FISC_CONTRAENTE" dal foglio 2, inserisci "COD_FISC_CONTRAENTE" qui
-column_to_remove = "COD_FISC_CONTRAENTE"  # Modifica questo nome per scegliere quale colonna togliere
+# Inserisci qui gli indici delle colonne richieste (1-based come nel tuo codice)
+columns_requested = [
+    1, 2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 
+    52, 57, 58, 59, 60, 64, 78, 79, 80, 81, 86, 89, 91, 94, 1
+]
 
 # Converti in zero-based per Python
-columns_sheet2_indices = [i - 1 for i in columns_sheet2]
+column_indices = [i - 1 for i in columns_requested]
 
-# Nomi per le colonne del FOGLIO 2 (filtrato completo)
-sheet2_headers = ["DTA_RFR", "NUM_TST", "NUM_PLZ", "CDC_TAR", "CDC_FND", "DTA_NAS_A1", "SESSO_A1", "DTA_DEC", 
-                 "DTA_SCA", "FRZ_PRM", "RIP_PRE", "RIS_MAT_A", "RIS_SPE", "RIS_INT_R", "MIS_INT_R", 
-                 "CDC_CNV", "MIN_GAR", "MIN_TRAT", "COM_MANT", "TPO_PRM", "RAMO", "FRM_TAR", "T_TCN", "COD_FISC_CONTRAENTE",
-                 "COD_PROD", "FONDO_UTILI"]
+# Inserisci qui i nomi colonna per l'output filtrato (deve corrispondere al numero di colonne)
+column_headers = [
+    "DTA_RFR", "NUL_PLZ", "CDC_TAR", "CDC_FND", "DTA_NAS_A1", 
+    "FRZ_PRM", "RIP_PRE", "RIS_MAT", "RIS_MAT_I", "CDC_CNV", 
+    "RAMO", "FRM_TAR", "T_TCN", "IND_COL", "DATA_SCAD_PREMI"
+]
 
 # Colonne che contengono date (MODIFICA SE NECESSARIO)
 date_columns = ["DTA_RFR", "DTA_NAS_A1", "DTA_DEC", "DTA_SCA", "DATA_SCAD_PREMI"]
@@ -90,7 +92,7 @@ def print_progress(current, total, operation="", start_time=None):
     if current == total:
         print()  # Nuova riga alla fine
 
-d = pd.to_datetime(date_str, errors='coerce')
+Noned = pd.to_datetime(date_str, errors='coerce')
         if pd.notna(converted):
             return converted.to_pydatetime()
     
@@ -179,10 +181,10 @@ print("🔄 Creazione foglio 2: Filtrato completo...")
 sheet2_start = time.time()
 ws_filtered = wb.create_sheet("Filtrato_Completo")
 
-if len(df_raw.columns) >= max(columns_sheet2_indices) + 1:
+if len(df_raw.columns) >= max(column_indices) + 1:
     # Seleziona colonne per foglio 2
-    df_sheet2 = df_raw.iloc[:, columns_sheet2_indices].copy()
-    df_sheet2.columns = sheet2_headers[:len(df_sheet2.columns)]
+    df_sheet2 = df_raw.iloc[:, column_indices].copy()
+    df_sheet2.columns = column_headers[:len(df_sheet2.columns)]
     
     # Colonne che contengono date (MODIFICA SE NECESSARIO)
     date_columns = ["DTA_RFR", "DTA_NAS_A1", "DTA_DEC", "DTA_SCA", "DATA_SCAD_PREMI"]
@@ -204,15 +206,19 @@ if len(df_raw.columns) >= max(columns_sheet2_indices) + 1:
         if col in df_sheet2.columns:
             df_sheet2[col] = pd.to_numeric(df_sheet2[col], errors='coerce')
     
-    # Scrivi header
+    # Scrivi prima riga (nomi personalizzati)
     ws_filtered.append(list(df_sheet2.columns))
     
-    # Scrivi dati con progress
+    # Scrivi seconda riga (Column1, Column2, ecc.)
+    column_names_filtered = [f"Column{i+1}" for i in range(len(df_sheet2.columns))]
+    ws_filtered.append(column_names_filtered)
+    
+    # Scrivi dati con progress (inizia dalla riga 3)
     print("🔄 Scrivendo dati filtrati...")
     write_start = time.time()
     total_filtered_rows = len(df_sheet2)
     
-    for row_idx, (_, row) in enumerate(df_sheet2.iterrows(), start=2):
+    for row_idx, (_, row) in enumerate(df_sheet2.iterrows(), start=3):  # Inizia dalla riga 3
         row_data = []
         for col_idx, (col_name, value) in enumerate(row.items(), start=1):
             if pd.isna(value) or value is None:
@@ -228,14 +234,14 @@ if len(df_raw.columns) >= max(columns_sheet2_indices) + 1:
         
         ws_filtered.append(row_data)
         
-        if (row_idx - 2) % 500 == 0 or (row_idx - 2) == total_filtered_rows - 1:
-            print_progress(row_idx - 1, total_filtered_rows, "Righe filtrate", write_start)
+        if (row_idx - 3) % 500 == 0 or (row_idx - 3) == total_filtered_rows - 1:
+            print_progress(row_idx - 2, total_filtered_rows, "Righe filtrate", write_start)
     
-    # Applica formato data
+    # Applica formato data (inizia dalla riga 3)
     print("🔄 Applicando formato date...")
     for col_idx, col_name in enumerate(df_sheet2.columns, start=1):
         if col_name in date_columns:
-            for row_idx in range(2, len(df_sheet2) + 2):
+            for row_idx in range(3, len(df_sheet2) + 3):  # Dalla riga 3
                 cell = ws_filtered.cell(row=row_idx, column=col_idx)
                 if cell.value is not None and isinstance(cell.value, datetime):
                     cell.style = date_style
@@ -247,7 +253,7 @@ print("🔄 Creazione foglio 1: Filtrato ridotto...")
 sheet1_start = time.time()
 ws_reduced = wb.create_sheet("Filtrato_Ridotto", 0)  # Inserisci come primo foglio
 
-if len(df_raw.columns) >= max(columns_sheet2_indices) + 1 and 'df_sheet2' in locals():
+if len(df_raw.columns) >= max(column_indices) + 1 and 'df_sheet2' in locals():
     if column_to_remove in df_sheet2.columns:
         print(f"🔄 Rimuovo colonna: {column_to_remove}")
         
@@ -256,15 +262,19 @@ if len(df_raw.columns) >= max(columns_sheet2_indices) + 1 and 'df_sheet2' in loc
         
         print(f"✅ Foglio 1: {len(df_sheet1.columns)} colonne (era {len(df_sheet2.columns)} nel foglio 2)")
         
-        # Scrivi header
+        # Scrivi prima riga (nomi personalizzati)
         ws_reduced.append(list(df_sheet1.columns))
         
-        # Scrivi dati con progress (le conversioni sono già state applicate in df_sheet2)
+        # Scrivi seconda riga (Column1, Column2, ecc.)
+        column_names_reduced = [f"Column{i+1}" for i in range(len(df_sheet1.columns))]
+        ws_reduced.append(column_names_reduced)
+        
+        # Scrivi dati con progress (inizia dalla riga 3)
         print("🔄 Scrivendo dati ridotti...")
         reduced_write_start = time.time()
         total_reduced_rows = len(df_sheet1)
         
-        for row_idx, (_, row) in enumerate(df_sheet1.iterrows(), start=2):
+        for row_idx, (_, row) in enumerate(df_sheet1.iterrows(), start=3):  # Inizia dalla riga 3
             row_data = []
             for col_idx, (col_name, value) in enumerate(row.items(), start=1):
                 if pd.isna(value) or value is None:
@@ -274,13 +284,13 @@ if len(df_raw.columns) >= max(columns_sheet2_indices) + 1 and 'df_sheet2' in loc
             
             ws_reduced.append(row_data)
             
-            if (row_idx - 2) % 500 == 0 or (row_idx - 2) == total_reduced_rows - 1:
-                print_progress(row_idx - 1, total_reduced_rows, "Righe ridotte", reduced_write_start)
+            if (row_idx - 3) % 500 == 0 or (row_idx - 3) == total_reduced_rows - 1:
+                print_progress(row_idx - 2, total_reduced_rows, "Righe ridotte", reduced_write_start)
         
-        # Applica formato data
+        # Applica formato data (inizia dalla riga 3)
         for col_idx, col_name in enumerate(df_sheet1.columns, start=1):
             if col_name in date_columns:
-                for row_idx in range(2, len(df_sheet1) + 2):
+                for row_idx in range(3, len(df_sheet1) + 3):  # Dalla riga 3
                     cell = ws_reduced.cell(row=row_idx, column=col_idx)
                     if cell.value is not None:
                         cell.style = date_style
