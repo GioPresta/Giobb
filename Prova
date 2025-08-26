@@ -6,30 +6,61 @@ from openpyxl.styles import NamedStyle
 from datetime import datetime
 import time
 import sys
-import re
 
 # ----- PARAMETRI PERSONALIZZABILI -----
-input_file = "GCA_90032_1606_RCCVITA_2025-07-31.txt"
+input_file = "GCA_00032_1006_BCCVITA_2025-07-31.txt"  # Modifica con il nome del tuo file
 
 # Colonne per il FOGLIO 2 (filtrato completo) - 1-based
-columns_sheet2 = [1, 2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 26, 27,
-                  52, 57, 58, 59, 60, 64, 78, 79, 80, 81, 86, 89, 91, 94, 113, 129, 130]
+columns_sheet2 = [1,3,4,8,9,14,17,25,26,51,56,57,58,59,63,65,76,78,79,80,85,89,90,93,111,112,128,129,136]
 
-# Colonna da RIMUOVERE per il FOGLIO 1 (nome della colonna dal foglio 2)
-# Esempio: se vuoi togliere "Codice_Tariffa" dal foglio 2, inserisci "Codice_Tariffa" qui
-column_to_remove = "Codice_Tariffa"  # Modifica questo nome per scegliere quale colonna togliere
+# Colonne da RIMUOVERE per il FOGLIO 1 (nome della colonna del foglio 2)
+# Esempio: se vuoi togliere "COD_FISC_CONTRAENTE" dal foglio 2, inserisci "COD_FISC_CONTRAENTE" qui
+column_to_remove = "COD_FISC_CONTRAENTE"  # Modifica questo nome per scegliere quale colonna togliere
 
 # Converti in zero-based per Python
 columns_sheet2_indices = [i - 1 for i in columns_sheet2]
 
 # Nomi per le colonne del FOGLIO 2 (filtrato completo)
-sheet2_headers = [
-    "Data_Riferimento", "Numero_Polizza", "Codice_Tariffa", "Codice_Fondo", "Data_Nascita_Assicurato", 
-    "Sesso_Assicurato", "Data_Decorrenza", "Data_Scadenza", "Data_Scadenza_Premi", "Frazione_Premio", 
-    "Riscatto_Parziale", "Riserva_Matematica_A", "Riserva_Matematica_I", "Codice_Convenzione", 
-    "Minimo_Garantito", "Minimo_Trattamento", "Colle_Mantovano", "Tipo_Premio", "Bando", 
-    "Tariffa_Relativa", "Tipo_Icon", "Indice_Collegamento", "Data_Scadenza_Premio_2", "Codice_Prodotto"
+sheet2_headers = ["DTA_RFR", "NUM_TST", "NUM_PLZ", "CDC_TAR", "CDC_FND", "DTA_NAS_A1", "SESSO_A1", "DTA_DEC", 
+                 "DTA_SCA", "FRZ_PRM", "RIP_PRE", "RIS_MAT_A", "RIS_SPE", "RIS_INT_R", "MIS_INT_R", 
+                 "CDC_CNV", "MIN_GAR", "MIN_TRAT", "COM_MANT", "TPO_PRM", "RAMO", "FRM_TAR", "T_TCN", "COD_FISC_CONTRAENTE",
+                 "COD_PROD", "FONDO_UTILI"]
+
+# Colonne che contengono date (MODIFICA SE NECESSARIO)
+date_columns = ["DTA_RFR", "DTA_NAS_A1", "DTA_DEC", "DTA_SCA", "DATA_SCAD_PREMI"]
+
+# Colonne numeriche (queste rimangono numeriche)
+numeric_columns = [
+    "NUM_TST", "NUM_PLZ", "FRZ_PRM", "RIP_PRE", "RIS_MAT_A", "MIN_GAR", "MIN_TRAT", 
+    "COM_MANT", "T_TCN"
 ]
+
+# Colonne alfanumeriche (verranno forzate come TESTO per evitare l'avviso Excel)
+text_columns = ["COD_FND"]
+
+# Titoli personalizzati per il raw (MODIFICA QUESTI)
+raw_titles = ["NUM_PROGRESSIVO", "DTA_RFR", "CDC_AZ", "NUM_TST", "NUM_GLI", "DEC_QNT_CLI",
+              "COC_TAR","COC_FND","COC_CNL_VND","COC_VND","COC_STA_POL","BETA",
+              "DTA_NAS_A1", "ETA_A1", "ETA_CALC_A1", "SESSO_A1", "STA_A1", "DTA_NAS_A2",
+              "ETA_A2", "ETA_CALC_A2", "SESSO_A2", "STA_A2", "DTA_EMS", "DTA_DEC", "DTA_SCA",
+              "DTA_NEW_PRD", "DTA_STR_PRE", "DUR", "DUR_P", "ANT_DUR", "CG_V", "CG_M", "CR_V", "CR_M", "CG_AV", "CG_AM",
+              "CR_AV", "CR_AM", "CPAU_V", "CPAU_M", "TSO_STB", "PG", "PR", "PRO", "PIR", "PG_A", "PR_A", "PIR_CTR",
+              "FRZ_PRM", "INT_FRZ", "COMP_P", "COMP_PT", "RIP_PRE", "RIS_MAT_A", "RIS_SPE", "RIS_AL_1",
+              "RIS_SIC", "RIS_SOV", "RIS_INT_R", "RIS_ZILLER", "RIS_AL_1M", "RIS_AL_2", "RIS_AL_3", "RIS_AL_4", "RIS_AL_5",
+              "CDC_RIZ", "DTA_RIZ", "CDC_COA", "DTA_COA", "COC_FND_COA", "DTA_FIN", "COC_GAR_COA", "MIN_GAR", "MIN_TRAT",
+              "CDC_PAESE_RISCHIO", "VAL_RISCATTO", "CDC_ASSICURATORE_INFRAGRUPPO", "ID_SIS_ALIM",
+              "TPO_PRM", "TPO_IND", "FLAG_AS", "DTA_FINE_AS",
+              "RAMO", "FRM_TAR", "PERC_PROV_AGG", "PERC_INDENN", "T_TCN", "NUM_QUOTE", "DTA_VALQUO_ANNIV",
+              "VALO_QUOTE_ANNIV", "DTA_VALQUO_RISE", "VALO_QUOTE_RISE",
+              "RISCATTI_PARZIALI", "MIN_GAR_SCAD", "GAR_AGGIUNTIVA", "GAR_COMMORIENZA", "CAP_RID_INIZ",
+              "CUMULO_PREMI", "CONV_ORIGINAL", "NOME_ASSICURATO", "NOME_ASSICURATO",
+              "COD_FISC_ASSICURATO", "NOME_CONTRAENTE", "COGNOME_CONTRAENTE", "COD_FISC_CONTRAENTE",
+              "YND_COLL", "LOB", "RFF", "HRG", "CLASSE_IAS", "TIPO_RISCHIO", "UNBUNDLING", "DPF", "CRITERIO_VALUTAZIONE",
+              "STA",
+              "CAU", "CONTRATTO", "ABI", "CAB", "FILIALE", "PROV_FILIALE", "DATA_SCAD_PREMI", "CDC_PROD",
+              "COD_DIVISIONE", "NUMERO_FINANZIAMENTO", "DEBITO_RESIDUO", "RISERVA_ESTINZ_ANTICIPATA",
+              "PVF_TAR_ALIM",
+              "CUMULO_VERSAMENTI_AGGIUNTIVI", "FONDO_UTILI"]
 
 def print_progress(current, total, operation="", start_time=None):
     """
@@ -41,67 +72,37 @@ def print_progress(current, total, operation="", start_time=None):
     percentage = (current / total) * 100
     bar_length = 50
     filled_length = int(bar_length * current // total)
-    bar = '█' * filled_length + '░' * (bar_length - filled_length)
+    bar = "█" * filled_length + "░" * (bar_length - filled_length)
     
     # Calcola tempo rimanente se fornito start_time
     time_info = ""
     if start_time and current > 0:
         elapsed_time = time.time() - start_time
-        rate = current / elapsed_time
-        if rate > 0:
-            remaining_time = (total - current) / rate
-            time_info = f" | Tempo rimanente: {remaining_time:.1f}s"
+        if elapsed_time > 0:
+            rate = current / elapsed_time
+            if rate > 0:
+                remaining_time = (total - current) / rate
+                time_info = f" | Tempo rimanente: {remaining_time:.1f}s"
     
-    sys.stdout.write(f'\r{operation} [{bar}] {percentage:.1f}% ({current}/{total}){time_info}')
+    sys.stdout.write(f"\r{operation} [{bar}] {percentage:.1f}% ({current}/{total}){time_info}")
     sys.stdout.flush()
     
     if current == total:
         print()  # Nuova riga alla fine
 
-def force_date_conversion(date_str):
-    """
-    Converte le date gestendo:
-    1. Date normali YYYY/MM/DD -> formato data Excel DD/MM/YYYY
-    2. Date speciali 31/12/9999 che spariscono nella conversione -> mantieni come data
-    """
-    if pd.isna(date_str) or date_str == "" or str(date_str).strip() == "":
-        return None
-    
-    date_str = str(date_str).strip()
-    
-    try:
-        # Caso speciale: 31/12/9999 (data che sparisce in Excel)
-        if "31/12/9999" in date_str or date_str == "9999/12/31":
-            # Usa una data molto alta ma valida per Excel (es. 31/12/2999)
-            return datetime(2999, 12, 31)
-        
-        # Gestione formato YYYY/MM/DD (il formato delle tue date normali)
-        if "/" in date_str and len(date_str.split("/")) == 3:
-            parts = date_str.split("/")
-            
-            # Se il primo numero è un anno (4 cifre), formato YYYY/MM/DD
-            if len(parts[0]) == 4 and int(parts[0]) > 1000:
-                year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
-                return datetime(year, month, day)
-            
-            # Se il primo numero è piccolo, formato DD/MM/YYYY
-            elif int(parts[0]) <= 31:
-                day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
-                return datetime(year, month, day)
-        
-        # Prova conversione diretta pandas
-        converted = pd.to_datetime(date_str, errors='coerce')
+d = pd.to_datetime(date_str, errors='coerce')
         if pd.notna(converted):
             return converted.to_pydatetime()
-        
-        return None
-        
+    
     except Exception as e:
         print(f"Errore nella conversione della data '{date_str}': {e}")
         return None
+    
+    return None
 
 # ----- STEP 1: LETTURA E PREPROCESSING DEL FILE TXT -----
-print(f"🔄 Elaborazione del file: {input_file}")
+print("🔄 Elaborazione del file: {input_file}")
+print("ℹ️  NOTA: Le date 31/12/9999 vengono convertite in 31/12/9998 per compatibilità Excel")
 step_start = time.time()
 
 try:
@@ -109,7 +110,7 @@ try:
         lines = file.readlines()[1:-1]  # Salta prima e ultima riga
 except UnicodeDecodeError:
     with open(input_file, encoding="latin-1") as file:
-        lines = file.readlines()[1:-1]
+        lines = file.readlines()[1:-1]  # Salta prima e ultima riga
 
 print(f"✅ File letto: {len(lines)} righe (escluse prima e ultima)")
 
@@ -127,7 +128,7 @@ print("🔄 Lettura dati con pandas...")
 df_raw = pd.read_csv("temp.txt", sep=';', header=None, dtype=str, low_memory=False)
 
 print(f"✅ Dati caricati: {len(df_raw)} righe, {len(df_raw.columns)} colonne")
-print(f"⏱️  Tempo lettura file: {time.time() - step_start:.2f} secondi\n")
+print(f"🕒 Tempo Lettura file: {time.time() - step_start:.2f} secondi\n")
 
 # ----- CREAZIONE WORKBOOK UNICO CON 3 FOGLI -----
 print("🔄 Inizializzazione file Excel...")
@@ -143,17 +144,9 @@ date_style.number_format = "DD/MM/YYYY"
 wb.add_named_style(date_style)
 
 # ----- FOGLIO 3: RAW COMPLETO -----
-print("📊 Creazione Foglio 3: RAW (tutti i dati)...")
+print("🔄 Creazione foglio 3: RAW (tutti i dati)...")
 raw_start = time.time()
 ws_raw = wb.create_sheet("RAW_Completo")
-
-# Titoli personalizzati per il raw (MODIFICA QUESTI)
-raw_titles = [
-    "Codice_Cliente", "Ragione_Sociale", "Partita_IVA", "Codice_Fiscale", "Indirizzo", 
-    "CAP", "Citta", "Provincia", "Telefono", "Email", "Data_Inserimento", "Stato_Cliente",
-    "Tipo_Contratto", "Valore_Contratto", "Data_Inizio", "Data_Fine", "Referente",
-    "Note", "Settore_Merceologico", "Canale_Acquisizione"
-]
 
 # Se hai più colonne, aggiungi titoli generici
 while len(raw_titles) < len(df_raw.columns):
@@ -171,16 +164,18 @@ ws_raw.append(column_names)
 
 # Aggiungi tutti i dati con progress bar
 print("🔄 Scrivendo dati RAW...")
+write_start = time.time()
 total_rows = len(df_raw)
+
 for i, row in enumerate(dataframe_to_rows(df_raw, index=False, header=False)):
     ws_raw.append(row)
     if i % 500 == 0 or i == total_rows - 1:
-        print_progress(i + 1, total_rows, "Righe RAW", raw_start)
+        print_progress(i + 1, total_rows, "Righe RAW", write_start)
 
 print(f"✅ Foglio RAW completato in {time.time() - raw_start:.2f} secondi\n")
 
 # ----- FOGLIO 2: FILTRATO COMPLETO -----
-print("📊 Creazione Foglio 2: Filtrato completo...")
+print("🔄 Creazione foglio 2: Filtrato completo...")
 sheet2_start = time.time()
 ws_filtered = wb.create_sheet("Filtrato_Completo")
 
@@ -190,29 +185,21 @@ if len(df_raw.columns) >= max(columns_sheet2_indices) + 1:
     df_sheet2.columns = sheet2_headers[:len(df_sheet2.columns)]
     
     # Colonne che contengono date (MODIFICA SE NECESSARIO)
-    date_columns = ["Data_Riferimento", "Data_Nascita_Assicurato", "Data_Decorrenza", 
-                   "Data_Scadenza", "Data_Scadenza_Premi", "Data_Scadenza_Premio_2"]
+    date_columns = ["DTA_RFR", "DTA_NAS_A1", "DTA_DEC", "DTA_SCA", "DATA_SCAD_PREMI"]
     
     # Converti colonne date con progress
     print("🔄 Conversione colonne date...")
     date_conversion_start = time.time()
     for col_idx, col in enumerate(date_columns):
         if col in df_sheet2.columns:
-            print(f"🗓️  Processando colonna data: {col}")
+            print(f"🔄 Processando colonna date: {col}")
             df_sheet2[col] = df_sheet2[col].apply(force_date_conversion)
             print_progress(col_idx + 1, len([c for c in date_columns if c in df_sheet2.columns]), 
                          "Date convertite", date_conversion_start)
     
-    # Colonne numeriche (queste rimarranno numeriche)
-    numeric_columns = ["Frazione_Premio", "Riscatto_Parziale", 
-                      "Riserva_Matematica_A", "Riserva_Matematica_I", "Minimo_Garantito", "Minimo_Trattamento"]
-    
-    # Colonne alfanumeriche (verranno forzate come TESTO per evitare l'avviso Excel)
-    text_columns = ["Numero_Polizza", "Codice_Tariffa", "Codice_Fondo", "Sesso_Assicurato", 
-                   "Codice_Convenzione", "Colle_Mantovano", "Tipo_Premio", "Bando", 
-                   "Tariffa_Relativa", "Tipo_Icon", "Codice_Prodotto"]
-    
+    # Conversione colonne numeriche
     print("🔄 Conversione colonne numeriche...")
+    numeric_conversion_start = time.time()
     for col in numeric_columns:
         if col in df_sheet2.columns:
             df_sheet2[col] = pd.to_numeric(df_sheet2[col], errors='coerce')
@@ -241,27 +228,28 @@ if len(df_raw.columns) >= max(columns_sheet2_indices) + 1:
         
         ws_filtered.append(row_data)
         
-        # Applica formato data
-        for col_idx, col_name in enumerate(df_sheet2.columns, start=1):
-            if col_name in date_columns:
-                cell = ws_filtered.cell(row=row_idx, column=col_idx)
-                if cell.value is not None:
-                    cell.style = date_style
-        
         if (row_idx - 2) % 500 == 0 or (row_idx - 2) == total_filtered_rows - 1:
             print_progress(row_idx - 1, total_filtered_rows, "Righe filtrate", write_start)
+    
+    # Applica formato data
+    print("🔄 Applicando formato date...")
+    for col_idx, col_name in enumerate(df_sheet2.columns, start=1):
+        if col_name in date_columns:
+            for row_idx in range(2, len(df_sheet2) + 2):
+                cell = ws_filtered.cell(row=row_idx, column=col_idx)
+                if cell.value is not None and isinstance(cell.value, datetime):
+                    cell.style = date_style
 
 print(f"✅ Foglio 2 completato in {time.time() - sheet2_start:.2f} secondi\n")
 
 # ----- FOGLIO 1: FILTRATO RIDOTTO (rimuove una colonna dal foglio 2) -----
-print("📊 Creazione Foglio 1: Filtrato ridotto...")
+print("🔄 Creazione foglio 1: Filtrato ridotto...")
 sheet1_start = time.time()
 ws_reduced = wb.create_sheet("Filtrato_Ridotto", 0)  # Inserisci come primo foglio
 
 if len(df_raw.columns) >= max(columns_sheet2_indices) + 1 and 'df_sheet2' in locals():
-    # Parti dal df_sheet2 già creato e rimuovi una colonna
     if column_to_remove in df_sheet2.columns:
-        print(f"🗑️  Rimuovo colonna: {column_to_remove}")
+        print(f"🔄 Rimuovo colonna: {column_to_remove}")
         
         # Crea df_sheet1 copiando df_sheet2 e rimuovendo la colonna specificata
         df_sheet1 = df_sheet2.drop(columns=[column_to_remove]).copy()
@@ -281,36 +269,31 @@ if len(df_raw.columns) >= max(columns_sheet2_indices) + 1 and 'df_sheet2' in loc
             for col_idx, (col_name, value) in enumerate(row.items(), start=1):
                 if pd.isna(value) or value is None:
                     row_data.append("")
-                elif col_name in date_columns and value is not None:
-                    if isinstance(value, datetime):
-                        row_data.append(value)
-                    else:
-                        converted_date = force_date_conversion(value)
-                        row_data.append(converted_date)
                 else:
                     row_data.append(value)
             
             ws_reduced.append(row_data)
             
-            # Applica formato data
-            for col_idx, col_name in enumerate(df_sheet1.columns, start=1):
-                if col_name in date_columns:
+            if (row_idx - 2) % 500 == 0 or (row_idx - 2) == total_reduced_rows - 1:
+                print_progress(row_idx - 1, total_reduced_rows, "Righe ridotte", reduced_write_start)
+        
+        # Applica formato data
+        for col_idx, col_name in enumerate(df_sheet1.columns, start=1):
+            if col_name in date_columns:
+                for row_idx in range(2, len(df_sheet1) + 2):
                     cell = ws_reduced.cell(row=row_idx, column=col_idx)
                     if cell.value is not None:
                         cell.style = date_style
-            
-            if (row_idx - 2) % 500 == 0 or (row_idx - 2) == total_reduced_rows - 1:
-                print_progress(row_idx - 1, total_reduced_rows, "Righe ridotte", reduced_write_start)
     else:
         print(f"❌ ERRORE: Colonna '{column_to_remove}' non trovata nel foglio 2!")
-        print(f"📋 Colonne disponibili: {list(df_sheet2.columns)}")
+        print(f"🔍 Colonne disponibili: {list(df_sheet2.columns)}")
         # Crea foglio vuoto come fallback
         df_sheet1 = df_sheet2.copy()  # Usa tutto il foglio 2 se la colonna non esiste
 
 print(f"✅ Foglio 1 completato in {time.time() - sheet1_start:.2f} secondi\n")
 
 # ----- SALVATAGGIO FILE UNICO -----
-print("💾 Salvataggio file Excel...")
+print("🔄 Salvataggio file Excel...")
 save_start = time.time()
 
 base_name = os.path.splitext(input_file)[0]
@@ -328,27 +311,16 @@ if os.path.exists("temp.txt"):
 # ----- RIEPILOGO FINALE -----
 total_time = time.time() - step_start
 print(f"✅ Salvataggio completato in {save_time:.2f} secondi")
-print(f"\n🎉 PROCESSO COMPLETATO!")
-print(f"⏱️  Tempo totale: {total_time:.2f} secondi ({total_time/60:.1f} minuti)")
+print("\n🎯 PROCESSO COMPLETATO!")
 print(f"📁 File creato: {output_file}")
-print(f"📊 Fogli contenuti:")
-print(f"   1. 'Filtrato_Ridotto' - {len(df_sheet1.columns) if 'df_sheet1' in locals() else 'N/A'} colonne")
-print(f"   2. 'Filtrato_Completo' - {len(df_sheet2.columns) if 'df_sheet2' in locals() else 'N/A'} colonne") 
-print(f"   3. 'RAW_Completo' - {len(df_raw.columns)} colonne")
+print("📊 Fogli contenuti:")
+print(f"    1. 'Filtrato_Ridotto' - {len(df_sheet1.columns)} colonne (era {len(df_sheet2.columns)} nel foglio 2)")
+print(f"    2. 'Filtrato_Completo' - {len(df_sheet2.columns)} colonne")
+print(f"    3. 'RAW_Completo' - {len(df_raw.columns)} colonne")
 
 # Calcola statistiche di performance
 if total_time > 0:
     rows_per_second = len(df_raw) / total_time
     print(f"⚡ Performance: {rows_per_second:.0f} righe/secondo")
 
-print(f"\n🔧 PERSONALIZZAZIONE:")
-print(f"   • Modifica 'columns_sheet2' per cambiare le colonne del foglio filtrato")
-print(f"   • Modifica 'column_to_remove' (attuale: '{column_to_remove}') per scegliere quale colonna togliere dal foglio 2")
-print(f"   • Modifica 'sheet2_headers' per cambiare i nomi delle colonne")
-print(f"   • Modifica 'raw_titles' per i titoli del foglio raw")
-print(f"   • Modifica 'date_columns' per specificare quali colonne contengono date")
-
-print(f"\n📋 STRUTTURA:")
-print(f"   • Foglio 3 (RAW): Tutti i dati + intestazioni personalizzate")
-print(f"   • Foglio 2 (Filtrato): Solo colonne selezionate con conversioni")
-print(f"   • Foglio 1 (Ridotto): Come foglio 2 ma senza 1 colonna")
+print(f"🕒 Tempo totale: {total_time:.2f} secondi ({total_time/60:.1f} minuti)")
