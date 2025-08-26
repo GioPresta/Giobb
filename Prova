@@ -15,9 +15,9 @@ input_file = "GCA_90032_1606_RCCVITA_2025-07-31.txt"
 columns_sheet2 = [1, 2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 26, 27,
                   52, 57, 58, 59, 60, 64, 78, 79, 80, 81, 86, 89, 91, 94, 113, 129, 130]
 
-# Colonna da RIMUOVERE per il FOGLIO 1 (dal foglio 2 si toglie questa colonna)
-# Esempio: se vuoi togliere la colonna 4 dal foglio 2, inserisci 4 qui
-column_to_remove = 4  # Modifica questo numero per scegliere quale colonna togliere
+# Colonna da RIMUOVERE per il FOGLIO 1 (nome della colonna dal foglio 2)
+# Esempio: se vuoi togliere "Codice_Tariffa" dal foglio 2, inserisci "Codice_Tariffa" qui
+column_to_remove = "Codice_Tariffa"  # Modifica questo nome per scegliere quale colonna togliere
 
 # Converti in zero-based per Python
 columns_sheet2_indices = [i - 1 for i in columns_sheet2]
@@ -203,9 +203,14 @@ if len(df_raw.columns) >= max(columns_sheet2_indices) + 1:
             print_progress(col_idx + 1, len([c for c in date_columns if c in df_sheet2.columns]), 
                          "Date convertite", date_conversion_start)
     
-    # Colonne numeriche
-    numeric_columns = ["Numero_Polizza", "Frazione_Premio", "Riscatto_Parziale", 
+    # Colonne numeriche (queste rimarranno numeriche)
+    numeric_columns = ["Frazione_Premio", "Riscatto_Parziale", 
                       "Riserva_Matematica_A", "Riserva_Matematica_I", "Minimo_Garantito", "Minimo_Trattamento"]
+    
+    # Colonne alfanumeriche (verranno forzate come TESTO per evitare l'avviso Excel)
+    text_columns = ["Numero_Polizza", "Codice_Tariffa", "Codice_Fondo", "Sesso_Assicurato", 
+                   "Codice_Convenzione", "Colle_Mantovano", "Tipo_Premio", "Bando", 
+                   "Tariffa_Relativa", "Tipo_Icon", "Codice_Prodotto"]
     
     print("🔄 Conversione colonne numeriche...")
     for col in numeric_columns:
@@ -248,43 +253,25 @@ if len(df_raw.columns) >= max(columns_sheet2_indices) + 1:
 
 print(f"✅ Foglio 2 completato in {time.time() - sheet2_start:.2f} secondi\n")
 
-# ----- FOGLIO 1: FILTRATO RIDOTTO (toglie una colonna dal foglio 2) -----
+# ----- FOGLIO 1: FILTRATO RIDOTTO (rimuove una colonna dal foglio 2) -----
 print("📊 Creazione Foglio 1: Filtrato ridotto...")
 sheet1_start = time.time()
 ws_reduced = wb.create_sheet("Filtrato_Ridotto", 0)  # Inserisci come primo foglio
 
-if len(df_raw.columns) >= max(columns_sheet2_indices) + 1:
-    # Trova quale colonna rimuovere (basato su column_to_remove)
-    if column_to_remove in columns_sheet2:
-        remove_index = columns_sheet2.index(column_to_remove)
+if len(df_raw.columns) >= max(columns_sheet2_indices) + 1 and 'df_sheet2' in locals():
+    # Parti dal df_sheet2 già creato e rimuovi una colonna
+    if column_to_remove in df_sheet2.columns:
+        print(f"🗑️  Rimuovo colonna: {column_to_remove}")
         
-        # Crea liste senza la colonna da rimuovere
-        columns_sheet1_indices = columns_sheet2_indices.copy()
-        columns_sheet1_indices.pop(remove_index)
+        # Crea df_sheet1 copiando df_sheet2 e rimuovendo la colonna specificata
+        df_sheet1 = df_sheet2.drop(columns=[column_to_remove]).copy()
         
-        sheet1_headers = sheet2_headers.copy()
-        removed_header = sheet1_headers.pop(remove_index)
-        
-        print(f"🗑️  Rimuovo colonna: {removed_header} (colonna originale {column_to_remove})")
-        
-        # Seleziona colonne per foglio 1
-        df_sheet1 = df_raw.iloc[:, columns_sheet1_indices].copy()
-        df_sheet1.columns = sheet1_headers[:len(df_sheet1.columns)]
-        
-        # Applica stesse conversioni del foglio 2
-        print("🔄 Conversione date per foglio ridotto...")
-        for col in date_columns:
-            if col in df_sheet1.columns:
-                df_sheet1[col] = df_sheet1[col].apply(force_date_conversion)
-        
-        for col in numeric_columns:
-            if col in df_sheet1.columns:
-                df_sheet1[col] = pd.to_numeric(df_sheet1[col], errors='coerce')
+        print(f"✅ Foglio 1: {len(df_sheet1.columns)} colonne (era {len(df_sheet2.columns)} nel foglio 2)")
         
         # Scrivi header
         ws_reduced.append(list(df_sheet1.columns))
         
-        # Scrivi dati con progress
+        # Scrivi dati con progress (le conversioni sono già state applicate in df_sheet2)
         print("🔄 Scrivendo dati ridotti...")
         reduced_write_start = time.time()
         total_reduced_rows = len(df_sheet1)
@@ -314,6 +301,11 @@ if len(df_raw.columns) >= max(columns_sheet2_indices) + 1:
             
             if (row_idx - 2) % 500 == 0 or (row_idx - 2) == total_reduced_rows - 1:
                 print_progress(row_idx - 1, total_reduced_rows, "Righe ridotte", reduced_write_start)
+    else:
+        print(f"❌ ERRORE: Colonna '{column_to_remove}' non trovata nel foglio 2!")
+        print(f"📋 Colonne disponibili: {list(df_sheet2.columns)}")
+        # Crea foglio vuoto come fallback
+        df_sheet1 = df_sheet2.copy()  # Usa tutto il foglio 2 se la colonna non esiste
 
 print(f"✅ Foglio 1 completato in {time.time() - sheet1_start:.2f} secondi\n")
 
@@ -351,7 +343,7 @@ if total_time > 0:
 
 print(f"\n🔧 PERSONALIZZAZIONE:")
 print(f"   • Modifica 'columns_sheet2' per cambiare le colonne del foglio filtrato")
-print(f"   • Modifica 'column_to_remove' (attuale: {column_to_remove}) per scegliere quale colonna togliere dal foglio 1")
+print(f"   • Modifica 'column_to_remove' (attuale: '{column_to_remove}') per scegliere quale colonna togliere dal foglio 2")
 print(f"   • Modifica 'sheet2_headers' per cambiare i nomi delle colonne")
 print(f"   • Modifica 'raw_titles' per i titoli del foglio raw")
 print(f"   • Modifica 'date_columns' per specificare quali colonne contengono date")
