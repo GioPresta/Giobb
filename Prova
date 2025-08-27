@@ -4,8 +4,69 @@ import xlsxwriter
 from datetime import datetime
 import time
 import sys
-import glob
-import tempfile
+
+search_pattern = "GCA_00032"
+
+input_file = None
+for file in os.listdir("."):
+    if file.startswith(search_pattern) and file.endswith(".txt"):
+        input_file = file
+        break
+
+if input_file is None:
+    print(f"Errore: Nessun file .txt trovato che inizia con '{search_pattern}'")
+    exit()
+
+print(f"File trovato: {input_file}")
+
+columns_requested = [
+    1, 2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 
+    52, 57, 58, 59, 60, 64, 78, 79, 80, 81, 86, 89, 91, 94
+]
+
+column_indices = [i - 1 for i in columns_requested]
+
+column_headers = [
+    "DTA_RFR", "NUL_PLZ", "CDC_TAR", "CDC_FND", "DTA_NAS_A1", 
+    "FRZ_PRM", "RIP_PRE", "RIS_MAT", "RIS_MAT_I", "CDC_CNV", 
+    "RAMO", "FRM_TAR", "T_TCN", "IND_COL", "DATA_SCAD_PREMI",
+    "COL16", "COL17", "COL18", "COL19", "COL20", "COL21", "COL22", 
+    "COL23", "COL24", "COL25", "COL26", "COL27", "COL28", "COL29", "COL30"
+]
+
+column_to_remove = "IND_COL"
+
+date_columns = ["DTA_RFR", "DTA_NAS_A1", "DTA_DEC", "DTA_SCA", "DATA_SCAD_PREMI"]
+
+numeric_columns = [
+    "NUM_TST", "NUM_PLZ", "FRZ_PRM", "RIP_PRE", "RIS_MAT_A", "MIN_GAR", "MIN_TRAT", 
+    "COM_MANT", "T_TCN"
+]
+
+text_columns = ["COD_FND"]
+
+raw_titles = ["NUM_PROGRESSIVO", "DTA_RFR", "CDC_AZ", "NUM_TST", "NUM_GLI", "DEC_QNT_CLI",
+              "COC_TAR","COC_FND","COC_CNL_VND","COC_VND","COC_STA_POL","BETA",
+              "DTA_NAS_A1", "ETA_A1", "ETA_CALC_A1", "SESSO_A1", "STA_A1", "DTA_NAS_A2",
+              "ETA_A2", "ETA_CALC_A2", "SESSO_A2", "STA_A2", "DTA_EMS", "DTA_DEC", "DTA_SCA",
+              "DTA_NEW_PRD", "DTA_STR_PRE", "DUR", "DUR_P", "ANT_DUR", "CG_V", "CG_M", "CR_V", "CR_M", "CG_AV", "CG_AM",
+              "CR_AV", "CR_AM", "CPAU_V", "CPAU_M", "TSO_STB", "PG", "PR", "PRO", "PIR", "PG_A", "PR_A", "PIR_CTR",
+              "FRZ_PRM", "INT_FRZ", "COMP_P", "COMP_PT", "RIP_PRE", "RIS_MAT_A", "RIS_SPE", "RIS_AL_1",
+              "RIS_SIC", "RIS_SOV", "RIS_INT_R", "RIS_ZILLER", "RIS_AL_1M", "RIS_AL_2", "RIS_AL_3", "RIS_AL_4", "RIS_AL_5",
+              "CDC_RIZ", "DTA_RIZ", "CDC_COA", "DTA_COA", "COC_FND_COA", "DTA_FIN", "COC_GAR_COA", "MIN_GAR", "MIN_TRAT",
+              "CDC_PAESE_RISCHIO", "VAL_RISCATTO", "CDC_ASSICURATORE_INFRAGRUPPO", "ID_SIS_ALIM",
+              "TPO_PRM", "TPO_IND", "FLAG_AS", "DTA_FINE_AS",
+              "RAMO", "FRM_TAR", "PERC_PROV_AGG", "PERC_INDENN", "T_TCN", "NUM_QUOTE", "DTA_VALQUO_ANNIV",
+              "VALO_QUOTE_ANNIV", "DTA_VALQUO_RISE", "VALO_QUOTE_RISE",
+              "RISCATTI_PARZIALI", "MIN_GAR_SCAD", "GAR_AGGIUNTIVA", "GAR_COMMORIENZA", "CAP_RID_INIZ",
+              "CUMULO_PREMI", "CONV_ORIGINAL", "NOME_ASSICURATO", "NOME_ASSICURATO",
+              "COD_FISC_ASSICURATO", "NOME_CONTRAENTE", "COGNOME_CONTRAENTE", "COD_FISC_CONTRAENTE",
+              "YND_COLL", "LOB", "RFF", "HRG", "CLASSE_IAS", "TIPO_RISCHIO", "UNBUNDLING", "DPF", "CRITERIO_VALUTAZIONE",
+              "STA",
+              "CAU", "CONTRATTO", "ABI", "CAB", "FILIALE", "PROV_FILIALE", "DATA_SCAD_PREMI", "CDC_PROD",
+              "COD_DIVISIONE", "NUMERO_FINANZIAMENTO", "DEBITO_RESIDUO", "RISERVA_ESTINZ_ANTICIPATA",
+              "PVF_TAR_ALIM",
+              "CUMULO_VERSAMENTI_AGGIUNTIVI", "FONDO_UTILI"]
 
 def format_time(seconds):
     if seconds < 60:
@@ -74,69 +135,6 @@ def force_date_conversion(date_str):
         return None
     
     return None
-
-search_pattern = "GCA_00032"
-
-input_file = None
-for file in os.listdir("."):
-    if file.startswith(search_pattern) and file.endswith(".txt"):
-        input_file = file
-        break
-
-if input_file is None:
-    print(f"Errore: Nessun file .txt trovato che inizia con '{search_pattern}'")
-    exit()
-
-print(f"File trovato: {input_file}")
-
-columns_requested = [
-    1, 2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 
-    52, 57, 58, 59, 60, 64, 78, 79, 80, 81, 86, 89, 91, 94
-]
-
-column_indices = [i - 1 for i in columns_requested]
-
-column_headers = [
-    "DTA_RFR", "NUL_PLZ", "CDC_TAR", "CDC_FND", "DTA_NAS_A1", 
-    "FRZ_PRM", "RIP_PRE", "RIS_MAT", "RIS_MAT_I", "CDC_CNV", 
-    "RAMO", "FRM_TAR", "T_TCN", "IND_COL", "DATA_SCAD_PREMI",
-    "COL16", "COL17", "COL18", "COL19", "COL20", "COL21", "COL22", 
-    "COL23", "COL24", "COL25", "COL26", "COL27", "COL28", "COL29", "COL30"
-]
-
-column_to_remove = "IND_COL"
-
-date_columns = ["DTA_RFR", "DTA_NAS_A1", "DTA_DEC", "DTA_SCA", "DATA_SCAD_PREMI"]
-
-numeric_columns = [
-    "NUM_TST", "NUM_PLZ", "FRZ_PRM", "RIP_PRE", "RIS_MAT_A", "MIN_GAR", "MIN_TRAT", 
-    "COM_MANT", "T_TCN"
-]
-
-text_columns = ["COD_FND"]
-
-raw_titles = ["NUM_PROGRESSIVO", "DTA_RFR", "CDC_AZ", "NUM_TST", "NUM_GLI", "DEC_QNT_CLI",
-              "COC_TAR","COC_FND","COC_CNL_VND","COC_VND","COC_STA_POL","BETA",
-              "DTA_NAS_A1", "ETA_A1", "ETA_CALC_A1", "SESSO_A1", "STA_A1", "DTA_NAS_A2",
-              "ETA_A2", "ETA_CALC_A2", "SESSO_A2", "STA_A2", "DTA_EMS", "DTA_DEC", "DTA_SCA",
-              "DTA_NEW_PRD", "DTA_STR_PRE", "DUR", "DUR_P", "ANT_DUR", "CG_V", "CG_M", "CR_V", "CR_M", "CG_AV", "CG_AM",
-              "CR_AV", "CR_AM", "CPAU_V", "CPAU_M", "TSO_STB", "PG", "PR", "PRO", "PIR", "PG_A", "PR_A", "PIR_CTR",
-              "FRZ_PRM", "INT_FRZ", "COMP_P", "COMP_PT", "RIP_PRE", "RIS_MAT_A", "RIS_SPE", "RIS_AL_1",
-              "RIS_SIC", "RIS_SOV", "RIS_INT_R", "RIS_ZILLER", "RIS_AL_1M", "RIS_AL_2", "RIS_AL_3", "RIS_AL_4", "RIS_AL_5",
-              "CDC_RIZ", "DTA_RIZ", "CDC_COA", "DTA_COA", "COC_FND_COA", "DTA_FIN", "COC_GAR_COA", "MIN_GAR", "MIN_TRAT",
-              "CDC_PAESE_RISCHIO", "VAL_RISCATTO", "CDC_ASSICURATORE_INFRAGRUPPO", "ID_SIS_ALIM",
-              "TPO_PRM", "TPO_IND", "FLAG_AS", "DTA_FINE_AS",
-              "RAMO", "FRM_TAR", "PERC_PROV_AGG", "PERC_INDENN", "T_TCN", "NUM_QUOTE", "DTA_VALQUO_ANNIV",
-              "VALO_QUOTE_ANNIV", "DTA_VALQUO_RISE", "VALO_QUOTE_RISE",
-              "RISCATTI_PARZIALI", "MIN_GAR_SCAD", "GAR_AGGIUNTIVA", "GAR_COMMORIENZA", "CAP_RID_INIZ",
-              "CUMULO_PREMI", "CONV_ORIGINAL", "NOME_ASSICURATO", "NOME_ASSICURATO",
-              "COD_FISC_ASSICURATO", "NOME_CONTRAENTE", "COGNOME_CONTRAENTE", "COD_FISC_CONTRAENTE",
-              "YND_COLL", "LOB", "RFF", "HRG", "CLASSE_IAS", "TIPO_RISCHIO", "UNBUNDLING", "DPF", "CRITERIO_VALUTAZIONE",
-              "STA",
-              "CAU", "CONTRATTO", "ABI", "CAB", "FILIALE", "PROV_FILIALE", "DATA_SCAD_PREMI", "CDC_PROD",
-              "COD_DIVISIONE", "NUMERO_FINANZIAMENTO", "DEBITO_RESIDUO", "RISERVA_ESTINZ_ANTICIPATA",
-              "PVF_TAR_ALIM",
-              "CUMULO_VERSAMENTI_AGGIUNTIVI", "FONDO_UTILI"]
 
 print(f"Elaborazione del file: {input_file}")
 print("NOTA: Le date 31/12/9999 vengono convertite in 31/12/9998 per compatibilità Excel")
@@ -209,7 +207,7 @@ output_file = f"{base_name}_processed.xlsx"
 
 workbook = xlsxwriter.Workbook(output_file, {
     'constant_memory': True,
-    'tmpdir': tempfile.gettempdir(),
+    'tmpdir': '.',
     'default_date_format': 'dd/mm/yyyy'
 })
 
@@ -318,15 +316,6 @@ save_time = time.time() - save_start
 
 if os.path.exists("temp.txt"):
     os.remove("temp.txt")
-
-temp_files = glob.glob("tmp*.tmp") + glob.glob("tmp*")
-for temp_file in temp_files:
-    try:
-        if os.path.exists(temp_file):
-            os.remove(temp_file)
-            print(f"Rimosso file temporaneo: {temp_file}")
-    except:
-        pass
 
 total_time = time.time() - step_start
 print(f"Salvataggio completato in {format_time(save_time)}")
