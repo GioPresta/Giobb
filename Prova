@@ -4,6 +4,10 @@ import xlsxwriter
 from datetime import datetime
 import time
 import sys
+import glob
+import tempfile
+from multiprocessing import Pool, cpu_count
+import numpy as np
 
 search_pattern = "GCA_00032"
 
@@ -158,10 +162,10 @@ with open("temp.txt", encoding="utf-8", mode="w") as temp_file:
             print_progress(i + 1, len(lines), "Processando righe", temp_start)
 
 print("Lettura dati con pandas...")
-df_raw = pd.read_csv("temp.txt", sep=';', header=None, dtype=str, low_memory=False)
+df_raw = pd.read_csv("temp.txt", sep=';', header=None, dtype=str, low_memory=False, engine='c')
 
 print(f"Dati caricati: {len(df_raw)} righe, {len(df_raw.columns)} colonne")
-print(f"Tempo Lettura file: {time.time() - step_start:.2f} secondi\n")
+print(f"Tempo Lettura file: {format_time(time.time() - step_start)}\n")
 
 print("Formattazione dati RAW...")
 
@@ -175,19 +179,58 @@ for date_col in date_columns:
     if date_col in raw_titles:
         raw_date_column_indices.append(raw_titles.index(date_col))
 
+def process_date_column_parallel(args):
+    col_data, col_name = args
+    print(f"Processando colonna date in parallelo: {col_name}")
+    
+    # Conversione vettoriale veloce
+    converted = pd.to_datetime(col_data, errors='coerce', format='%Y/%m/%d')
+    
+    # Sostituisci anni 9999 con 9998
+    mask_9999 = converted.dt.year == 9999
+    converted.loc[mask_9999] = converted.loc[mask_9999].apply(lambda x: x.replace(year=9998) if pd.notna(x) else x)
+    
+    return col_name, converted
+
 if raw_date_column_indices:
-    print("Conversione colonne date nel RAW...")
+    print("Conversione colonne date nel RAW con multiprocessing...")
+    
+    # Prepara dati per elaborazione parallela
+    date_tasks = []
     for col_idx in raw_date_column_indices:
         col_name = raw_titles[col_idx]
-        print(f"Processando colonna date RAW: {col_name}")
-        df_raw.iloc[:, col_idx] = df_raw.iloc[:, col_idx].apply(force_date_conversion)
+        col_data = df_raw.iloc[:, col_idx].copy()
+        date_tasks.append((col_data, col_name))
+    
+    # Elaborazione parallela
+    with Pool(min(len(date_tasks), cpu_count())) as pool:
+        results = pool.map(process_date_column_parallel, date_tasks)
+    
+    # Applica risultati al DataFrame
+    for col_name, converted_data in results:
+        col_idx = raw_titles.index(col_name)
+        df_raw.iloc[:, col_idx] = converted_data
 
-print("Conversione colonne numeriche nel RAW...")
+def process_numeric_column_parallel(args):
+    col_data, col_name = args
+    print(f"Processando colonna numerica in parallelo: {col_name}")
+    return col_name, pd.to_numeric(col_data, errors='coerce')
+
+print("Conversione colonne numeriche nel RAW con multiprocessing...")
+numeric_tasks = []
 for num_col in numeric_columns:
     if num_col in raw_titles:
         col_idx = raw_titles.index(num_col)
-        print(f"Processando colonna numerica RAW: {num_col}")
-        df_raw.iloc[:, col_idx] = pd.to_numeric(df_raw.iloc[:, col_idx], errors='coerce')
+        col_data = df_raw.iloc[:, col_idx].copy()
+        numeric_tasks.append((col_data, num_col))
+
+if numeric_tasks:
+    with Pool(min(len(numeric_tasks), cpu_count())) as pool:
+        results = pool.map(process_numeric_column_parallel, numeric_tasks)
+    
+    for col_name, converted_data in results:
+        col_idx = raw_titles.index(col_name)
+        df_raw.iloc[:, col_idx] = converted_data
 
 print("Preparazione fogli filtrati...")
 if len(df_raw.columns) >= max(column_indices) + 1:
@@ -207,8 +250,9 @@ output_file = f"{base_name}_processed.xlsx"
 
 workbook = xlsxwriter.Workbook(output_file, {
     'constant_memory': True,
-    'tmpdir': '.',
-    'default_date_format': 'dd/mm/yyyy'
+    'tmpdir': tempfile.gettempdir(),  # Usa cartella temp di sistema invece della cartella corrente
+    'default_date_format': 'dd/mm/yyyy',
+    'options': {'strings_to_numbers': False, 'strings_to_urls': False}
 })
 
 date_format = workbook.add_format({'num_format': 'dd/mm/yyyy'})
@@ -221,20 +265,12 @@ ws_finale.write_row(0, 0, list(df_sheet1.columns))
 ws_finale.write_row(1, 0, [f"Column{i+1}" for i in range(len(df_sheet1.columns))])
 
 write_start = time.time()
-for row_idx, (_, row) in enumerate(df_sheet1.iterrows()):
-    row_data = []
-    for col_name, value in row.items():
-        if pd.isna(value) or value is None:
-            row_data.append("")
-        elif isinstance(value, datetime):
-            row_data.append(value)
-        else:
-            row_data.append(value)
-    
+# Conversione veloce a lista di liste
+df1_data = df_sheet1.values.tolist()
+for row_idx, row_data in enumerate(df1_data):
     ws_finale.write_row(row_idx + 2, 0, row_data)
-    
-    if row_idx % 5000 == 0 or row_idx == len(df_sheet1) - 1:
-        print_progress(row_idx + 1, len(df_sheet1), "Righe Finale", write_start)
+    if row_idx % 10000 == 0 or row_idx == len(df1_data) - 1:
+        print_progress(row_idx + 1, len(df1_data), "Righe Finale", write_start)
 
 for col_idx, col_name in enumerate(df_sheet1.columns):
     if col_name in date_columns:
@@ -249,20 +285,12 @@ ws_completo.write_row(0, 0, list(df_sheet2.columns))
 ws_completo.write_row(1, 0, [f"Column{i+1}" for i in range(len(df_sheet2.columns))])
 
 write_start = time.time()
-for row_idx, (_, row) in enumerate(df_sheet2.iterrows()):
-    row_data = []
-    for col_name, value in row.items():
-        if pd.isna(value) or value is None:
-            row_data.append("")
-        elif isinstance(value, datetime):
-            row_data.append(value)
-        else:
-            row_data.append(value)
-    
+# Conversione veloce a lista di liste
+df2_data = df_sheet2.values.tolist()
+for row_idx, row_data in enumerate(df2_data):
     ws_completo.write_row(row_idx + 2, 0, row_data)
-    
-    if row_idx % 5000 == 0 or row_idx == len(df_sheet2) - 1:
-        print_progress(row_idx + 1, len(df_sheet2), "Righe Completo", write_start)
+    if row_idx % 10000 == 0 or row_idx == len(df2_data) - 1:
+        print_progress(row_idx + 1, len(df2_data), "Righe Completo", write_start)
 
 for col_idx, col_name in enumerate(df_sheet2.columns):
     if col_name in date_columns:
@@ -317,8 +345,19 @@ save_time = time.time() - save_start
 if os.path.exists("temp.txt"):
     os.remove("temp.txt")
 
+# Rimuovi tutti i file temporanei xlsxwriter
+import glob
+temp_files = glob.glob("tmp*.tmp") + glob.glob("tmp*")
+for temp_file in temp_files:
+    try:
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
+            print(f"Rimosso file temporaneo: {temp_file}")
+    except:
+        pass  # Ignora errori se il file è ancora in uso
+
 total_time = time.time() - step_start
-print(f"Salvataggio completato in {save_time:.2f} secondi")
+print(f"Salvataggio completato in {format_time(save_time)}")
 print("\nPROCESSO COMPLETATO!")
 print(f"File creato: {output_file}")
 print("Fogli contenuti:")
@@ -330,4 +369,4 @@ if total_time > 0:
     rows_per_second = len(df_raw) / total_time
     print(f"Performance: {rows_per_second:.0f} righe/secondo")
 
-print(f"Tempo totale: {total_time:.2f} secondi ({total_time/60:.1f} minuti)")
+print(f"Tempo totale: {format_time(total_time)}")
