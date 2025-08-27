@@ -182,13 +182,14 @@ if raw_date_column_indices:
     for col_idx in raw_date_column_indices:
         col_name = raw_titles[col_idx]
         print(f"Processando colonna date RAW: {col_name}")
-        # Conversione vettoriale più veloce
-        date_series = pd.to_datetime(df_raw.iloc[:, col_idx], errors='coerce', format='%Y/%m/%d')
-        # Sostituisci gli anni 9999 con 9998
-        mask_9999 = date_series.dt.year == 9999
-        if mask_9999.any():  # Solo se ci sono date 9999
-            date_series.loc[mask_9999] = date_series.loc[mask_9999].apply(lambda x: x.replace(year=9998) if pd.notna(x) else x)
-        df_raw.iloc[:, col_idx] = date_series
+        # Approccio ibrido: veloce ma sicuro
+        date_series = df_raw.iloc[:, col_idx].astype(str)
+        # Sostituisci 9999 con 9998 a livello stringa (operazione veloce)
+        date_series = date_series.str.replace('9999', '9998', regex=False)
+        # Sostituisci 'nan' e valori vuoti con None
+        date_series = date_series.replace(['nan', 'None', ''], None)
+        # Converti tutto insieme (operazione vettoriale veloce)
+        df_raw.iloc[:, col_idx] = pd.to_datetime(date_series, errors='coerce')
 
 print("Conversione colonne numeriche nel RAW...")
 for num_col in numeric_columns:
