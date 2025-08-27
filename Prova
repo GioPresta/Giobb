@@ -1,38 +1,41 @@
-Trova questa sezione nel codice (verso la fine):
+Il problema è che hai cambiato il `tmpdir` per usare la cartella temporanea di sistema, ma poi cerchi i file nella cartella corrente.
+
+**TROVA questa riga nel codice:**
 
 ```python
-if os.path.exists("temp.txt"):
-    os.remove("temp.txt")
-
-temp_files = glob.glob("tmp*.tmp") + glob.glob("tmp*")
-for temp_file in temp_files:
-    try:
-        if os.path.exists(temp_file):
-            os.remove(temp_file)
-            print(f"Rimosso file temporaneo: {temp_file}")
-    except:
-        pass
+workbook = xlsxwriter.Workbook(output_file, {
+    'constant_memory': True,
+    'tmpdir': tempfile.gettempdir(),
+    'default_date_format': 'dd/mm/yyyy'
+})
 ```
 
-**SOSTITUISCILA CON:**
+**CAMBIALA CON:**
 
 ```python
-if os.path.exists("temp.txt"):
-    os.remove("temp.txt")
-
-# Aspetta che xlsxwriter rilasci tutti i file
-import time
-time.sleep(1)
-
-# Rimuovi tutti i file tmp nella cartella corrente
-temp_files = glob.glob("tmp*")  # Rimuovi .tmp per catturare tutto
-for temp_file in temp_files:
-    try:
-        if os.path.isfile(temp_file) and temp_file.startswith("tmp"):
-            os.remove(temp_file)
-            print(f"Rimosso file temporaneo: {temp_file}")
-    except Exception as e:
-        print(f"Errore rimozione {temp_file}: {e}")
+workbook = xlsxwriter.Workbook(output_file, {
+    'constant_memory': True,
+    'tmpdir': '.',  # Crea i file temp nella cartella corrente
+    'default_date_format': 'dd/mm/yyyy'
+})
 ```
 
-Questo dovrebbe rimuovere tutti e 3 i file tmp che si generano.
+**OPPURE** se vuoi tenerli nella cartella temp di sistema, modifica la pulizia:
+
+```python
+# Rimuovi file temp sia dalla cartella corrente che da quella di sistema
+import tempfile
+temp_dirs = ['.', tempfile.gettempdir()]
+
+for temp_dir in temp_dirs:
+    temp_files = glob.glob(os.path.join(temp_dir, "tmp*"))
+    for temp_file in temp_files:
+        try:
+            if os.path.isfile(temp_file):
+                os.remove(temp_file)
+                print(f"Rimosso file temporaneo: {temp_file}")
+        except Exception as e:
+            print(f"Errore rimozione {temp_file}: {e}")
+```
+
+La prima soluzione è più semplice: crea e pulisce tutto nella stessa cartella.
