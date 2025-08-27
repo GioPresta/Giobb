@@ -1,26 +1,38 @@
-Modifica queste due righe nel codice:
+Trova questa sezione nel codice (verso la fine):
 
-**Riga ~150 (foglio Finale):**
 ```python
-# CAMBIA QUESTA:
-ws_finale.write_row(1, 0, [f"Column{i+1}" for i in range(len(df_sheet1.columns))])
+if os.path.exists("temp.txt"):
+    os.remove("temp.txt")
 
-# CON QUESTA:
-original_column_numbers_sheet1 = []
-for col_name in df_sheet1.columns:
-    if col_name in df_sheet2.columns:
-        pos_in_sheet2 = list(df_sheet2.columns).index(col_name)
-        original_col_num = columns_requested[pos_in_sheet2]
-        original_column_numbers_sheet1.append(f"Column{original_col_num}")
-ws_finale.write_row(1, 0, original_column_numbers_sheet1)
+temp_files = glob.glob("tmp*.tmp") + glob.glob("tmp*")
+for temp_file in temp_files:
+    try:
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
+            print(f"Rimosso file temporaneo: {temp_file}")
+    except:
+        pass
 ```
 
-**Riga ~170 (foglio COD_FISC_CONTRAENTE):**
-```python
-# CAMBIA QUESTA:
-ws_completo.write_row(1, 0, [f"Column{i+1}" for i in range(len(df_sheet2.columns))])
+**SOSTITUISCILA CON:**
 
-# CON QUESTA:
-original_column_numbers_sheet2 = [f"Column{col_num}" for col_num in columns_requested[:len(df_sheet2.columns)]]
-ws_completo.write_row(1, 0, original_column_numbers_sheet2)
+```python
+if os.path.exists("temp.txt"):
+    os.remove("temp.txt")
+
+# Aspetta che xlsxwriter rilasci tutti i file
+import time
+time.sleep(1)
+
+# Rimuovi tutti i file tmp nella cartella corrente
+temp_files = glob.glob("tmp*")  # Rimuovi .tmp per catturare tutto
+for temp_file in temp_files:
+    try:
+        if os.path.isfile(temp_file) and temp_file.startswith("tmp"):
+            os.remove(temp_file)
+            print(f"Rimosso file temporaneo: {temp_file}")
+    except Exception as e:
+        print(f"Errore rimozione {temp_file}: {e}")
 ```
+
+Questo dovrebbe rimuovere tutti e 3 i file tmp che si generano.
