@@ -160,7 +160,7 @@ with open("temp.txt", encoding="utf-8", mode="w") as temp_file:
             print_progress(i + 1, len(lines), "Processando righe", temp_start)
 
 print("Lettura dati con pandas...")
-df_raw = pd.read_csv("temp.txt", sep=';', header=None, dtype=str, low_memory=False, engine='c')
+df_raw = pd.read_csv("temp.txt", sep=';', header=None, dtype=str, low_memory=False)
 
 print(f"Dati caricati: {len(df_raw)} righe, {len(df_raw.columns)} colonne")
 print(f"Tempo Lettura file: {format_time(time.time() - step_start)}\n")
