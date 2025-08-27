@@ -163,7 +163,7 @@ print("Lettura dati con pandas...")
 df_raw = pd.read_csv("temp.txt", sep=';', header=None, dtype=str, low_memory=False, engine='c')
 
 print(f"Dati caricati: {len(df_raw)} righe, {len(df_raw.columns)} colonne")
-print(f"Tempo Lettura file: {time.time() - step_start:.2f} secondi\n")
+print(f"Tempo Lettura file: {format_time(time.time() - step_start)}\n")
 
 print("Formattazione dati RAW...")
 
@@ -323,7 +323,7 @@ for temp_file in temp_files:
         pass  # Ignora errori se il file è ancora in uso
 
 total_time = time.time() - step_start
-print(f"Salvataggio completato in {save_time:.2f} secondi")
+print(f"Salvataggio completato in {format_time(save_time)}")
 print("\nPROCESSO COMPLETATO!")
 print(f"File creato: {output_file}")
 print("Fogli contenuti:")
@@ -335,4 +335,4 @@ if total_time > 0:
     rows_per_second = len(df_raw) / total_time
     print(f"Performance: {rows_per_second:.0f} righe/secondo")
 
-print(f"Tempo totale: {total_time:.2f} secondi ({total_time/60:.1f} minuti)")
+print(f"Tempo totale: {format_time(total_time)}")
