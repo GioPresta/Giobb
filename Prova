@@ -18,7 +18,7 @@ def converti_data(data_str):
             return None
     return None
 
-# Funzione per leggere e unire i file
+# Funzione per leggere il file
 def leggi_file(file_path):
     with open(file_path, 'r', encoding='utf-8') as f:
         return f.readlines()
@@ -37,24 +37,30 @@ dati = []
 # Processa ogni riga
 for riga in righe:
     # Salta righe troppo corte
-    if len(riga) < 90:
+    if len(riga) < 80:
         continue
     
-    # Estrai i dati dalla riga (assumendo posizioni fisse)
+    # Controlla se c'è "SD" e salta la riga
+    if "SD" in riga:
+        continue
+    
     try:
-        tipo_op = riga[62:64].strip()
+        # Estrai i dati usando posizioni fisse (da definire)
+        # QUESTE POSIZIONI DEVONO ESSERE VERIFICATE CON IL FILE REALE
         
-        # Salta se tipo operazione è "SD"
-        if tipo_op == "SD":
-            continue
+        # Polizza: dall'inizio fino alla T (posizione da verificare)
+        polizza = riga[0:11].strip()  # DA VERIFICARE
         
-        polizza = riga[0:11].strip()
-        garanzia = riga[9:16].strip()
-        fondo = riga[16:35].strip()
+        # Garanzia: dalla T fino al 7, rimuovi la T se presente
+        garanzia_raw = riga[11:16].strip()  # DA VERIFICARE
+        garanzia = garanzia_raw[1:] if garanzia_raw.startswith('T') else garanzia_raw
         
-        # Estrai commissioni (posizione 35:62) e converti
-        commissioni_str = riga[35:62].strip()
-        if commissioni_str:
+        # Fondo: da FR fino a 76
+        fondo = riga[16:28].strip()  # DA VERIFICARE
+        
+        # Commissioni: sezione numerica lunga
+        commissioni_str = riga[28:50].strip()  # DA VERIFICARE
+        if commissioni_str and commissioni_str.isdigit():
             try:
                 commissioni = round(float(commissioni_str) / 10_000_000, 8)
             except ValueError:
@@ -62,23 +68,24 @@ for riga in righe:
         else:
             commissioni = 0
         
-        # Estrai e converti le date
-        data_effetto_str = riga[64:72].strip()
-        data_competenza_str = riga[72:81].strip()
-        
+        # Prima data: dopo commissioni
+        data_effetto_str = riga[50:58].strip()  # DA VERIFICARE
         data_effetto = converti_data(data_effetto_str)
+        
+        # Seconda data
+        data_competenza_str = riga[58:66].strip()  # DA VERIFICARE
         data_competenza = converti_data(data_competenza_str)
         
-        # Aggiungi i dati alla lista
-        dati.append({
-            'Polizza': polizza,
-            'Garanzia': garanzia,
-            'Fondo': fondo,
-            'Commissioni': commissioni,
-            'Tipo operazione': tipo_op,
-            'Data effetto': data_effetto,
-            'Data competenza': data_competenza
-        })
+        # Aggiungi i dati alla lista solo se polizza non è vuota
+        if polizza:
+            dati.append({
+                'Polizza': polizza,
+                'Garanzia': garanzia,
+                'Fondo': fondo,
+                'Commissioni': commissioni,
+                'Data effetto': data_effetto,
+                'Data competenza': data_competenza
+            })
         
     except (IndexError, ValueError) as e:
         print(f"Errore nel processare la riga: {e}")
@@ -113,7 +120,7 @@ if dati:
         # Mostra statistiche
         print(f"\nStatistiche:")
         print(f"- Polizze uniche: {df['Polizza'].nunique()}")
-        print(f"- Tipi operazione: {df['Tipo operazione'].value_counts().to_dict()}")
+        print(f"- Garanzie uniche: {df['Garanzie'].nunique()}")
         print(f"- Commissioni totali: {df['Commissioni'].sum():.8f}")
         
     except Exception as e:
@@ -128,3 +135,14 @@ if dati:
     
 else:
     print("Nessun dato valido trovato nel file.")
+
+print("\n" + "="*50)
+print("ATTENZIONE: Le posizioni delle colonne sono da verificare!")
+print("Controlla il file e aggiorna le posizioni nel codice:")
+print("- Polizza: riga[0:X]")
+print("- Garanzia: riga[X:Y]") 
+print("- Fondo: riga[Y:Z]")
+print("- Commissioni: riga[Z:W]")
+print("- Data effetto: riga[W:V]")
+print("- Data competenza: riga[V:U]")
+print("="*50)
