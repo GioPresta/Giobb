@@ -23,6 +23,19 @@ with open(input_file, 'r', encoding='utf-8') as f:
 
 print(f"File letto. Righe totali: {len(righe)}")
 
+# Debug: controlla le prime righe
+for i in range(min(3, len(righe))):
+    riga = righe[i]
+    print(f"\nRiga {i+1}:")
+    print(f"  Lunghezza: {len(riga)}")
+    print(f"  Contiene SD: {'SD' in riga}")
+    print(f"  Primi 50 caratteri: '{riga[:50]}'")
+    if len(riga) >= 137:
+        print(f"  Posizioni 121:129: '{riga[121:129]}'")
+        print(f"  Posizioni 129:137: '{riga[129:137]}'")
+
+print("\n" + "="*50)
+
 # Lista per i dati
 dati = []
 
