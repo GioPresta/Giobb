@@ -1,3 +1,4 @@
+
 import pandas as pd
 from datetime import datetime
 
@@ -28,24 +29,24 @@ dati = []
 
 # Processa ogni riga
 for riga in righe:
-    if len(riga) < 80 or "SD" in riga:
+    if len(riga) < 137 or "SD" in riga:
         continue
     
     try:
-        # POSIZIONI DA VERIFICARE CON IL TUO FILE
+        # Posizioni aggiornate
         polizza = riga[0:11].strip()
         garanzia_raw = riga[11:16].strip()
         garanzia = garanzia_raw[1:] if garanzia_raw.startswith('T') else garanzia_raw
-        fondo = riga[16:28].strip()
-        commissioni_str = riga[28:50].strip()
+        fondo = riga[16:35].strip()
+        commissioni_str = riga[35:62].strip()
         
         if commissioni_str and commissioni_str.isdigit():
             commissioni = round(float(commissioni_str) / 10_000_000, 8)
         else:
             commissioni = 0
         
-        data_effetto = converti_data(riga[50:58].strip())
-        data_competenza = converti_data(riga[58:66].strip())
+        data_effetto = converti_data(riga[121:129].strip())
+        data_competenza = converti_data(riga[129:137].strip())
         
         if polizza:
             dati.append({
@@ -59,9 +60,13 @@ for riga in righe:
     except:
         continue
 
-# Crea tabella Excel
+# Crea tabella Excel con date formattate
 df = pd.DataFrame(dati)
-df.to_excel(output_file, index=False)
+
+# Salva con formattazione date
+with pd.ExcelWriter(output_file, engine='openpyxl', date_format='DD/MM/YYYY') as writer:
+    df.to_excel(writer, index=False)
 
 print(f"File Excel creato: {output_file}")
 print(f"Righe processate: {len(df)}")
+print(f"Prime date trovate: {df['Data effetto'].head()}")
