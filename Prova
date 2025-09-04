@@ -73,9 +73,21 @@ def main():
         else:
             commissioni = 0
         
-        # Date - posizioni corrette
+        # Date - posizioni corrette con debug
         data1_text = line[65:73].strip()
         data2_text = line[73:81].strip()
+        
+        # Debug per le prime 3 righe
+        if i < 3:
+            print(f"RIGA {i+1} - Debug date:")
+            print(f"  Pos 65:73 = '{data1_text}' (len={len(data1_text)}, isdigit={data1_text.isdigit()})")
+            print(f"  Pos 73:81 = '{data2_text}' (len={len(data2_text)}, isdigit={data2_text.isdigit()})")
+            # Mostra anche posizioni vicine
+            print(f"  Pos 63:71 = '{line[63:71].strip()}'")
+            print(f"  Pos 64:72 = '{line[64:72].strip()}'") 
+            print(f"  Pos 66:74 = '{line[66:74].strip()}'")
+            print(f"  Pos 71:79 = '{line[71:79].strip()}'")
+            print(f"  Pos 75:83 = '{line[75:83].strip()}'")
         
         # Converti date
         data1 = None
