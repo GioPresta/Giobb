@@ -115,31 +115,35 @@ def main():
     
     print(f"✓ Processate {len(risultati)} righe")
     
-    # 5. CREAZIONE EXCEL con formattazione date corretta
+    # 5. CREAZIONE EXCEL con formattazione numerica corretta
     if risultati:
         df = pd.DataFrame(risultati)
         
-        # Salva Excel con formattazione speciale per le date
+        # Salva Excel con formattazione speciale
         with pd.ExcelWriter("output_repcommg.xlsx", engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='REPCOMMG')
             
             # Accedi al foglio per formattare
-            workbook = writer.book
             worksheet = writer.sheets['REPCOMMG']
             
-            # Formati numerici
-            number_format = workbook.add_format({'num_format': '0'})  # Numero intero per Polizza
-            decimal_format = workbook.add_format({'num_format': '0.00000000'})  # 8 decimali per Commissioni
-            date_format = workbook.add_format({'num_format': 'dd/mm/yyyy'})  # Date
-            
-            # Applica formati alle colonne
+            # Applica formati alle colonne usando openpyxl
             for col_num, column_name in enumerate(df.columns):
+                col_letter = chr(65 + col_num)  # A, B, C, D, E, F...
+                
                 if column_name == 'Polizza':
-                    worksheet.set_column(col_num, col_num, 12, number_format)
+                    # Formato numero intero
+                    for row in range(2, len(df) + 2):
+                        worksheet[f"{col_letter}{row}"].number_format = '0'
+                        
                 elif column_name == 'Commissioni':
-                    worksheet.set_column(col_num, col_num, 15, decimal_format)
+                    # Formato con 8 decimali
+                    for row in range(2, len(df) + 2):
+                        worksheet[f"{col_letter}{row}"].number_format = '0.00000000'
+                        
                 elif 'Data' in column_name:
-                    worksheet.set_column(col_num, col_num, 12, date_format)
+                    # Formato data
+                    for row in range(2, len(df) + 2):
+                        worksheet[f"{col_letter}{row}"].number_format = 'dd/mm/yyyy'
         
         print(f"✓ File Excel creato: output_repcommg.xlsx")
         print(f"  - Polizza: formattata come numero intero")
