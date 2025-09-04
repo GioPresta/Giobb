@@ -59,16 +59,6 @@ for riga in righe:
     except:
         continue
 
-# Crea tabella Excel con date formattate
-df = pd.DataFrame(dati)
-
-# Salva con formattazione date
-with pd.ExcelWriter(output_file, engine='openpyxl', date_format='DD/MM/YYYY') as writer:
-    df.to_excel(writer, index=False)
-
-print(f"File Excel creato: {output_file}")
-print(f"Righe processate: {len(df)}")
-
 # Debug: mostra una riga di esempio per verificare le posizioni
 if len(righe) > 0:
     riga_esempio = righe[0]
@@ -82,3 +72,16 @@ if len(righe) > 0:
         print(f"Data competenza (pos 129:137): '{riga_esempio[129:137]}'")
     else:
         print("Riga troppo corta per contenere le date nelle posizioni specificate!")
+
+# Crea tabella Excel con date formattate
+if dati:
+    df = pd.DataFrame(dati)
+    
+    # Salva con formattazione date
+    with pd.ExcelWriter(output_file, engine='openpyxl', date_format='DD/MM/YYYY') as writer:
+        df.to_excel(writer, index=False)
+
+    print(f"File Excel creato: {output_file}")
+    print(f"Righe processate: {len(df)}")
+else:
+    print("Nessun dato trovato!")
