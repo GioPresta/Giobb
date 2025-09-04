@@ -1,4 +1,3 @@
-
 import pandas as pd
 from datetime import datetime
 
@@ -69,4 +68,17 @@ with pd.ExcelWriter(output_file, engine='openpyxl', date_format='DD/MM/YYYY') as
 
 print(f"File Excel creato: {output_file}")
 print(f"Righe processate: {len(df)}")
-print(f"Prime date trovate: {df['Data effetto'].head()}")
+
+# Debug: mostra una riga di esempio per verificare le posizioni
+if len(righe) > 0:
+    riga_esempio = righe[0]
+    print(f"\nRiga di esempio (primi 150 caratteri):")
+    print(f"'{riga_esempio[:150]}'")
+    print(f"Lunghezza riga: {len(riga_esempio)}")
+    
+    if len(riga_esempio) >= 137:
+        print(f"\nDati estratti dalla prima riga:")
+        print(f"Data effetto (pos 121:129): '{riga_esempio[121:129]}'")
+        print(f"Data competenza (pos 129:137): '{riga_esempio[129:137]}'")
+    else:
+        print("Riga troppo corta per contenere le date nelle posizioni specificate!")
