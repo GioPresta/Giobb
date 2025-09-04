@@ -1,41 +1,130 @@
-Il problema è che hai cambiato il `tmpdir` per usare la cartella temporanea di sistema, ma poi cerchi i file nella cartella corrente.
+import pandas as pd
+from datetime import datetime
 
-**TROVA questa riga nel codice:**
+# File di input e output
+input_file = "REPCOMMG.TXT"
+output_file = "output_repcommg.xlsx"
 
-```python
-workbook = xlsxwriter.Workbook(output_file, {
-    'constant_memory': True,
-    'tmpdir': tempfile.gettempdir(),
-    'default_date_format': 'dd/mm/yyyy'
-})
-```
-
-**CAMBIALA CON:**
-
-```python
-workbook = xlsxwriter.Workbook(output_file, {
-    'constant_memory': True,
-    'tmpdir': '.',  # Crea i file temp nella cartella corrente
-    'default_date_format': 'dd/mm/yyyy'
-})
-```
-
-**OPPURE** se vuoi tenerli nella cartella temp di sistema, modifica la pulizia:
-
-```python
-# Rimuovi file temp sia dalla cartella corrente che da quella di sistema
-import tempfile
-temp_dirs = ['.', tempfile.gettempdir()]
-
-for temp_dir in temp_dirs:
-    temp_files = glob.glob(os.path.join(temp_dir, "tmp*"))
-    for temp_file in temp_files:
+# Funzione per convertire la data da AAAAMMGG a datetime
+def converti_data(data_str):
+    if len(data_str.strip()) == 8:
         try:
-            if os.path.isfile(temp_file):
-                os.remove(temp_file)
-                print(f"Rimosso file temporaneo: {temp_file}")
-        except Exception as e:
-            print(f"Errore rimozione {temp_file}: {e}")
-```
+            # Converte AAAAMMGG in oggetto datetime
+            anno = int(data_str[0:4])
+            mese = int(data_str[4:6])
+            giorno = int(data_str[6:8])
+            return datetime(anno, mese, giorno)
+        except ValueError:
+            return None
+    return None
 
-La prima soluzione è più semplice: crea e pulisce tutto nella stessa cartella.
+# Funzione per leggere e unire i file
+def leggi_file(file_path):
+    with open(file_path, 'r', encoding='utf-8') as f:
+        return f.readlines()
+
+# Leggi il file
+try:
+    righe = leggi_file(input_file)
+    print(f"File {input_file} letto con successo. Righe totali: {len(righe)}")
+except FileNotFoundError:
+    print(f"Errore: File {input_file} non trovato!")
+    exit()
+
+# Lista per contenere i dati processati
+dati = []
+
+# Processa ogni riga
+for riga in righe:
+    # Salta righe troppo corte
+    if len(riga) < 90:
+        continue
+    
+    # Estrai i dati dalla riga (assumendo posizioni fisse)
+    try:
+        tipo_op = riga[62:64].strip()
+        
+        # Salta se tipo operazione è "SD"
+        if tipo_op == "SD":
+            continue
+        
+        polizza = riga[0:11].strip()
+        garanzia = riga[9:16].strip()
+        fondo = riga[16:35].strip()
+        
+        # Estrai commissioni (posizione 35:62) e converti
+        commissioni_str = riga[35:62].strip()
+        if commissioni_str:
+            try:
+                commissioni = round(float(commissioni_str) / 10_000_000, 8)
+            except ValueError:
+                commissioni = 0
+        else:
+            commissioni = 0
+        
+        # Estrai e converti le date
+        data_effetto_str = riga[64:72].strip()
+        data_competenza_str = riga[72:81].strip()
+        
+        data_effetto = converti_data(data_effetto_str)
+        data_competenza = converti_data(data_competenza_str)
+        
+        # Aggiungi i dati alla lista
+        dati.append({
+            'Polizza': polizza,
+            'Garanzia': garanzia,
+            'Fondo': fondo,
+            'Commissioni': commissioni,
+            'Tipo operazione': tipo_op,
+            'Data effetto': data_effetto,
+            'Data competenza': data_competenza
+        })
+        
+    except (IndexError, ValueError) as e:
+        print(f"Errore nel processare la riga: {e}")
+        continue
+
+# Crea DataFrame
+if dati:
+    df = pd.DataFrame(dati)
+    
+    # Salva in Excel con formato date
+    try:
+        with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='REPCOMMG')
+            
+            # Formatta le colonne delle date
+            worksheet = writer.sheets['REPCOMMG']
+            
+            # Trova le colonne delle date
+            date_columns = ['Data effetto', 'Data competenza']
+            for col_name in date_columns:
+                if col_name in df.columns:
+                    col_idx = df.columns.get_loc(col_name) + 1  # +1 perché Excel inizia da 1
+                    col_letter = chr(64 + col_idx)  # Converte in lettera (A, B, C, etc.)
+                    
+                    # Applica formato data dd/mm/yyyy
+                    for row in range(2, len(df) + 2):  # Inizia da riga 2 (dopo header)
+                        worksheet[f"{col_letter}{row}"].number_format = 'dd/mm/yyyy'
+        
+        print(f"File generato con successo: {output_file}")
+        print(f"Totale righe processate: {len(df)}")
+        
+        # Mostra statistiche
+        print(f"\nStatistiche:")
+        print(f"- Polizze uniche: {df['Polizza'].nunique()}")
+        print(f"- Tipi operazione: {df['Tipo operazione'].value_counts().to_dict()}")
+        print(f"- Commissioni totali: {df['Commissioni'].sum():.8f}")
+        
+    except Exception as e:
+        print(f"Errore nel salvare il file Excel: {e}")
+        # Fallback: salva senza formattazione
+        df.to_excel(output_file, index=False)
+        print(f"File salvato senza formattazione date: {output_file}")
+        
+    # Mostra le prime righe come anteprima
+    print(f"\nAnteprima dei primi 5 record:")
+    print(df.head())
+    
+else:
+    print("Nessun dato valido trovato nel file.")
