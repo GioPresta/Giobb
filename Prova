@@ -14,8 +14,8 @@ def converti_data(data_str):
             giorno = int(data_str[6:8])
             return datetime(anno, mese, giorno)
         except ValueError:
-            return None
-    return None
+            return ""
+    return ""
 
 # Leggi il file
 with open(input_file, 'r', encoding='utf-8') as f:
@@ -32,7 +32,6 @@ for riga in righe:
         continue
     
     try:
-        # Posizioni aggiornate
         polizza = riga[0:11].strip()
         garanzia_raw = riga[11:16].strip()
         garanzia = garanzia_raw[1:] if garanzia_raw.startswith('T') else garanzia_raw
@@ -48,40 +47,15 @@ for riga in righe:
         data_competenza = converti_data(riga[129:137].strip())
         
         if polizza:
-            dati.append({
-                'Polizza': polizza,
-                'Garanzia': garanzia,
-                'Fondo': fondo,
-                'Commissioni': commissioni,
-                'Data effetto': data_effetto,
-                'Data competenza': data_competenza
-            })
+            dati.append([polizza, garanzia, fondo, commissioni, data_effetto, data_competenza])
     except:
         continue
 
-# Debug: mostra una riga di esempio per verificare le posizioni
-if len(righe) > 0:
-    riga_esempio = righe[0]
-    print(f"\nRiga di esempio (primi 150 caratteri):")
-    print(f"'{riga_esempio[:150]}'")
-    print(f"Lunghezza riga: {len(riga_esempio)}")
-    
-    if len(riga_esempio) >= 137:
-        print(f"\nDati estratti dalla prima riga:")
-        print(f"Data effetto (pos 121:129): '{riga_esempio[121:129]}'")
-        print(f"Data competenza (pos 129:137): '{riga_esempio[129:137]}'")
-    else:
-        print("Riga troppo corta per contenere le date nelle posizioni specificate!")
+# Crea DataFrame con nomi colonne
+df = pd.DataFrame(dati, columns=['Polizza', 'Garanzia', 'Fondo', 'Commissioni', 'Data effetto', 'Data competenza'])
 
-# Crea tabella Excel con date formattate
-if dati:
-    df = pd.DataFrame(dati)
-    
-    # Salva con formattazione date
-    with pd.ExcelWriter(output_file, engine='openpyxl', date_format='DD/MM/YYYY') as writer:
-        df.to_excel(writer, index=False)
+# Salva Excel
+df.to_excel(output_file, index=False)
 
-    print(f"File Excel creato: {output_file}")
-    print(f"Righe processate: {len(df)}")
-else:
-    print("Nessun dato trovato!")
+print(f"File Excel creato: {output_file}")
+print(f"Righe processate: {len(df)}")
