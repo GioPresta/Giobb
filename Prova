@@ -9,7 +9,6 @@ output_file = "output_repcommg.xlsx"
 def converti_data(data_str):
     if len(data_str.strip()) == 8:
         try:
-            # Converte AAAAMMGG in oggetto datetime
             anno = int(data_str[0:4])
             mese = int(data_str[4:6])
             giorno = int(data_str[6:8])
@@ -18,65 +17,36 @@ def converti_data(data_str):
             return None
     return None
 
-# Funzione per leggere il file
-def leggi_file(file_path):
-    with open(file_path, 'r', encoding='utf-8') as f:
-        return f.readlines()
-
 # Leggi il file
-try:
-    righe = leggi_file(input_file)
-    print(f"File {input_file} letto con successo. Righe totali: {len(righe)}")
-except FileNotFoundError:
-    print(f"Errore: File {input_file} non trovato!")
-    exit()
+with open(input_file, 'r', encoding='utf-8') as f:
+    righe = f.readlines()
 
-# Lista per contenere i dati processati
+print(f"File letto. Righe totali: {len(righe)}")
+
+# Lista per i dati
 dati = []
 
 # Processa ogni riga
 for riga in righe:
-    # Salta righe troppo corte
-    if len(riga) < 80:
-        continue
-    
-    # Controlla se c'è "SD" e salta la riga
-    if "SD" in riga:
+    if len(riga) < 80 or "SD" in riga:
         continue
     
     try:
-        # Estrai i dati usando posizioni fisse (da definire)
-        # QUESTE POSIZIONI DEVONO ESSERE VERIFICATE CON IL FILE REALE
-        
-        # Polizza: dall'inizio fino alla T (posizione da verificare)
-        polizza = riga[0:11].strip()  # DA VERIFICARE
-        
-        # Garanzia: dalla T fino al 7, rimuovi la T se presente
-        garanzia_raw = riga[11:16].strip()  # DA VERIFICARE
+        # POSIZIONI DA VERIFICARE CON IL TUO FILE
+        polizza = riga[0:11].strip()
+        garanzia_raw = riga[11:16].strip()
         garanzia = garanzia_raw[1:] if garanzia_raw.startswith('T') else garanzia_raw
+        fondo = riga[16:28].strip()
+        commissioni_str = riga[28:50].strip()
         
-        # Fondo: da FR fino a 76
-        fondo = riga[16:28].strip()  # DA VERIFICARE
-        
-        # Commissioni: sezione numerica lunga
-        commissioni_str = riga[28:50].strip()  # DA VERIFICARE
         if commissioni_str and commissioni_str.isdigit():
-            try:
-                commissioni = round(float(commissioni_str) / 10_000_000, 8)
-            except ValueError:
-                commissioni = 0
+            commissioni = round(float(commissioni_str) / 10_000_000, 8)
         else:
             commissioni = 0
         
-        # Prima data: dopo commissioni
-        data_effetto_str = riga[50:58].strip()  # DA VERIFICARE
-        data_effetto = converti_data(data_effetto_str)
+        data_effetto = converti_data(riga[50:58].strip())
+        data_competenza = converti_data(riga[58:66].strip())
         
-        # Seconda data
-        data_competenza_str = riga[58:66].strip()  # DA VERIFICARE
-        data_competenza = converti_data(data_competenza_str)
-        
-        # Aggiungi i dati alla lista solo se polizza non è vuota
         if polizza:
             dati.append({
                 'Polizza': polizza,
@@ -86,63 +56,12 @@ for riga in righe:
                 'Data effetto': data_effetto,
                 'Data competenza': data_competenza
             })
-        
-    except (IndexError, ValueError) as e:
-        print(f"Errore nel processare la riga: {e}")
+    except:
         continue
 
-# Crea DataFrame
-if dati:
-    df = pd.DataFrame(dati)
-    
-    # Salva in Excel con formato date
-    try:
-        with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='REPCOMMG')
-            
-            # Formatta le colonne delle date
-            worksheet = writer.sheets['REPCOMMG']
-            
-            # Trova le colonne delle date
-            date_columns = ['Data effetto', 'Data competenza']
-            for col_name in date_columns:
-                if col_name in df.columns:
-                    col_idx = df.columns.get_loc(col_name) + 1  # +1 perché Excel inizia da 1
-                    col_letter = chr(64 + col_idx)  # Converte in lettera (A, B, C, etc.)
-                    
-                    # Applica formato data dd/mm/yyyy
-                    for row in range(2, len(df) + 2):  # Inizia da riga 2 (dopo header)
-                        worksheet[f"{col_letter}{row}"].number_format = 'dd/mm/yyyy'
-        
-        print(f"File generato con successo: {output_file}")
-        print(f"Totale righe processate: {len(df)}")
-        
-        # Mostra statistiche
-        print(f"\nStatistiche:")
-        print(f"- Polizze uniche: {df['Polizza'].nunique()}")
-        print(f"- Garanzie uniche: {df['Garanzie'].nunique()}")
-        print(f"- Commissioni totali: {df['Commissioni'].sum():.8f}")
-        
-    except Exception as e:
-        print(f"Errore nel salvare il file Excel: {e}")
-        # Fallback: salva senza formattazione
-        df.to_excel(output_file, index=False)
-        print(f"File salvato senza formattazione date: {output_file}")
-        
-    # Mostra le prime righe come anteprima
-    print(f"\nAnteprima dei primi 5 record:")
-    print(df.head())
-    
-else:
-    print("Nessun dato valido trovato nel file.")
+# Crea tabella Excel
+df = pd.DataFrame(dati)
+df.to_excel(output_file, index=False)
 
-print("\n" + "="*50)
-print("ATTENZIONE: Le posizioni delle colonne sono da verificare!")
-print("Controlla il file e aggiorna le posizioni nel codice:")
-print("- Polizza: riga[0:X]")
-print("- Garanzia: riga[X:Y]") 
-print("- Fondo: riga[Y:Z]")
-print("- Commissioni: riga[Z:W]")
-print("- Data effetto: riga[W:V]")
-print("- Data competenza: riga[V:U]")
-print("="*50)
+print(f"File Excel creato: {output_file}")
+print(f"Righe processate: {len(df)}")
