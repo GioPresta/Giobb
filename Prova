@@ -1,112 +1,48 @@
 import pandas as pd
 from datetime import datetime
+import time
 
-def main():
-    print("=== PROCESSAMENTO REPCOMMG.TXT ===")
+def processare_repcommg():
+    with open("REPCOMMG.TXT", "r", encoding="utf-8") as file:
+        lines = file.readlines()
     
-    # 1. APERTURA FILE
-    try:
-        with open("REPCOMMG.TXT", "r", encoding="utf-8") as file:
-            lines = file.readlines()
-        print(f"✓ File aperto: {len(lines)} righe trovate")
-    except:
-        print("✗ Errore: impossibile aprire REPCOMMG.TXT")
-        return
-    
-    # 2. ANALISI PRELIMINARE
-    print("\n=== ANALISI RIGHE ===")
-    righe_valide = 0
-    righe_sd = 0
-    righe_corte = 0
-    
-    for line in lines:
-        if len(line) < 80:  # Aggiornato per le nuove posizioni
-            righe_corte += 1
-        elif "SD" in line:
-            righe_sd += 1
-        else:
-            righe_valide += 1
-    
-    print(f"Righe totali: {len(lines)}")
-    print(f"Righe troppo corte (<80 char): {righe_corte}")  # Aggiornato
-    print(f"Righe con SD (da scartare): {righe_sd}")
-    print(f"Righe valide per processamento: {righe_valide}")
-    
-    # 3. MOSTRA ESEMPIO
-    if len(lines) > 0:
-        print(f"\n=== ESEMPIO PRIMA RIGA ===")
-        esempio = lines[0].rstrip()
-        print(f"Lunghezza: {len(esempio)}")
-        print(f"Contenuto: '{esempio[:100]}...'")
-        
-        if len(esempio) >= 137:
-            print(f"\nESTRAZIONE CAMPI:")
-            print(f"Polizza (0:11): '{esempio[0:11]}'")
-            print(f"Garanzia (11:16): '{esempio[11:16]}'")
-            print(f"Fondo (16:35): '{esempio[16:35]}'")
-            print(f"Commissioni (35:62): '{esempio[35:62]}'")
-            print(f"Data effetto (121:129): '{esempio[121:129]}'")
-            print(f"Data competenza (129:137): '{esempio[129:137]}'")
-    
-    # 4. PROCESSAMENTO VERO E PROPRIO
-    print(f"\n=== PROCESSAMENTO ===")
     risultati = []
-    
-    for i, line in enumerate(lines):
-        # Salta righe problematiche - aggiornato per le nuove posizioni
-        if len(line) < 80:  # Aggiornato
+    for line in lines:
+        if len(line) < 80 or "SD" in line:
             continue
-        if "SD" in line:
-            continue
-            
-        # Estrai campi base
+        
         polizza_text = line[0:11].strip()
-        polizza = int(polizza_text) if polizza_text.isdigit() else polizza_text  # Converti in numero se possibile
+        polizza = int(polizza_text) if polizza_text.isdigit() else polizza_text
         
         garanzia = line[11:16].strip()
         if garanzia.startswith("T"):
             garanzia = garanzia[1:]
+        
         fondo = line[16:35].strip()
         
-        # Commissioni - sempre come numero
         comm_text = line[35:62].strip()
-        if comm_text.isdigit():
-            commissioni = float(comm_text) / 10_000_000  # Già numero
-        else:
-            commissioni = 0.0  # Assicurati che sia float
+        commissioni = float(comm_text) / 10_000_000 if comm_text.isdigit() else 0.0
         
-        # Tipo Operazione (tra commissioni e date)
-        tipo_op = line[62:64].strip()  # 2 caratteri tra pos 62-64
+        tipo_op = line[62:64].strip()
         
-        # Date - posizioni corrette aggiornate
-        data1_text = line[64:72].strip()  # Corretto da 65:73
-        data2_text = line[72:80].strip()  # Corretto da 73:81
+        data1_text = line[64:72].strip()
+        data2_text = line[72:80].strip()
         
-        # Debug per le prime 3 righe (rimosso per velocità)
-        # if i < 3:
-        #     print(f"RIGA {i+1} - Debug date:")
-        #     print(f"  Pos 64:72 = '{data1_text}' (len={len(data1_text)}, isdigit={data1_text.isdigit()})")
-        #     print(f"  Pos 72:80 = '{data2_text}' (len={len(data2_text)}, isdigit={data2_text.isdigit()})")
-        
-        # Converti date - solo la data senza orario
         data1 = None
         data2 = None
         
         if len(data1_text) == 8 and data1_text.isdigit():
             try:
-                # Crea solo la data senza orario
                 data1 = datetime(int(data1_text[0:4]), int(data1_text[4:6]), int(data1_text[6:8])).date()
             except:
                 pass
                 
         if len(data2_text) == 8 and data2_text.isdigit():
             try:
-                # Crea solo la data senza orario  
                 data2 = datetime(int(data2_text[0:4]), int(data2_text[4:6]), int(data2_text[6:8])).date()
             except:
                 pass
         
-        # Aggiungi risultato con Tipo Operazione
         risultati.append({
             "Polizza": polizza,
             "Garanzia": garanzia, 
@@ -117,50 +53,130 @@ def main():
             "Data_competenza": data2
         })
     
-    print(f"✓ Processate {len(risultati)} righe")
+    return risultati
+
+def processare_commgfnz():
+    with open("COMMGFNZ.TXT", "r", encoding="utf-8") as file:
+        lines = file.readlines()
     
-    # 5. CREAZIONE EXCEL con formattazione numerica corretta
-    if risultati:
-        df = pd.DataFrame(risultati)
+    risultati = []
+    for line in lines:
+        if len(line) < 137 or "SD" in line:
+            continue
         
-        # Salva Excel con formattazione speciale
-        with pd.ExcelWriter("output_repcommg.xlsx", engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='REPCOMMG')
-            
-            # Accedi al foglio per formattare
-            worksheet = writer.sheets['REPCOMMG']
-            
-            # Applica formati alle colonne usando openpyxl
-            for col_num, column_name in enumerate(df.columns):
-                col_letter = chr(65 + col_num)  # A, B, C, D, E, F...
+        polizza_text = line[0:11].strip()
+        polizza = int(polizza_text) if polizza_text.isdigit() else polizza_text
+        
+        tariffa = line[11:16].strip()
+        if tariffa.startswith("T"):
+            tariffa = tariffa[1:]
+        
+        fondo = line[16:35].strip()
+        
+        comm_text = line[35:62].strip()
+        if comm_text.isdigit():
+            commissioni_base = float(comm_text) / 10_000_000
+            commissioni = round(commissioni_base * 0.76754, 2)
+        else:
+            commissioni = 0.0
+        
+        tipo_op = line[119:121].strip()
+        
+        data1_text = line[121:129].strip()
+        data2_text = line[129:137].strip()
+        
+        data1 = None
+        data2 = None
+        
+        if len(data1_text) == 8 and data1_text.isdigit():
+            try:
+                data1 = datetime(int(data1_text[0:4]), int(data1_text[4:6]), int(data1_text[6:8])).date()
+            except:
+                pass
                 
-                if column_name == 'Polizza':
-                    # Formato numero intero
-                    for row in range(2, len(df) + 2):
-                        worksheet[f"{col_letter}{row}"].number_format = '0'
-                        
-                elif column_name == 'Commissioni':
-                    # Formato con 8 decimali
-                    for row in range(2, len(df) + 2):
-                        worksheet[f"{col_letter}{row}"].number_format = '0.00000000'
-                        
-                elif 'Data' in column_name:
-                    # Formato data
-                    for row in range(2, len(df) + 2):
-                        worksheet[f"{col_letter}{row}"].number_format = 'dd/mm/yyyy'
+        if len(data2_text) == 8 and data2_text.isdigit():
+            try:
+                data2 = datetime(int(data2_text[0:4]), int(data2_text[4:6]), int(data2_text[6:8])).date()
+            except:
+                pass
         
-        print(f"✓ File Excel creato: output_repcommg.xlsx")
-        print(f"  - Polizza: formattata come numero intero")
-        print(f"  - Commissioni: formattate con 8 decimali") 
-        print(f"  - Date: formattate DD/MM/YYYY")
+        risultati.append({
+            "Polizza": polizza,
+            "Tariffa": tariffa, 
+            "Fondo": fondo,
+            "Commissioni": commissioni,
+            "Tipo_Operazione": tipo_op,
+            "Data_effetto": data1,
+            "Data_competenza": data2
+        })
+    
+    return risultati
+
+def main():
+    start_time = time.time()
+    
+    print("=== PROCESSAMENTO FILE ===")
+    
+    print("Processando REPCOMMG.TXT...")
+    dati_repcommg = processare_repcommg()
+    print(f"✓ REPCOMMG: {len(dati_repcommg)} righe processate")
+    
+    print("Processando COMMGFNZ.TXT...")
+    dati_commgfnz = processare_commgfnz()
+    print(f"✓ COMMGFNZ: {len(dati_commgfnz)} righe processate")
+    
+    print("Unendo tutti i dati...")
+    tutti_dati = dati_repcommg + dati_commgfnz
+    
+    if tutti_dati:
+        with pd.ExcelWriter("output_unificato.xlsx", engine='openpyxl') as writer:
+            df_repcommg = pd.DataFrame(dati_repcommg)
+            df_commgfnz = pd.DataFrame(dati_commgfnz)
+            df_finale = pd.DataFrame(tutti_dati)
+            
+            df_finale.to_excel(writer, sheet_name='FINALE', index=False)
+            df_repcommg.to_excel(writer, sheet_name='REPCOMMG', index=False)
+            df_commgfnz.to_excel(writer, sheet_name='COMMGFNZ', index=False)
+            
+            for sheet_name in ['FINALE', 'REPCOMMG', 'COMMGFNZ']:
+                worksheet = writer.sheets[sheet_name]
+                
+                if sheet_name == 'FINALE':
+                    num_rows = len(df_finale)
+                elif sheet_name == 'REPCOMMG':
+                    num_rows = len(df_repcommg)
+                else:
+                    num_rows = len(df_commgfnz)
+                
+                num_cols = len(df_finale.columns) if sheet_name == 'FINALE' else (len(df_repcommg.columns) if sheet_name == 'REPCOMMG' else len(df_commgfnz.columns))
+                
+                for col_num in range(num_cols):
+                    col_letter = chr(65 + col_num)
+                    
+                    if col_num == 0:  # Polizza
+                        for row in range(2, num_rows + 2):
+                            worksheet[f"{col_letter}{row}"].number_format = '0'
+                    elif col_num == 3:  # Commissioni
+                        for row in range(2, num_rows + 2):
+                            if sheet_name == 'COMMGFNZ' or (sheet_name == 'FINALE' and row > len(df_repcommg) + 1):
+                                worksheet[f"{col_letter}{row}"].number_format = '0.00'
+                            else:
+                                worksheet[f"{col_letter}{row}"].number_format = '0.00000000'
+                    elif col_num >= 5:  # Date
+                        for row in range(2, num_rows + 2):
+                            worksheet[f"{col_letter}{row}"].number_format = 'dd/mm/yyyy'
         
-        # Mostra anteprima
-        print(f"\n=== ANTEPRIMA RISULTATI ===")
-        print(df.head())
+        end_time = time.time()
+        execution_time = end_time - start_time
+        
+        print(f"✓ File Excel creato: output_unificato.xlsx")
+        print(f"  - Foglio FINALE: {len(tutti_dati)} righe totali")
+        print(f"  - Foglio REPCOMMG: {len(dati_repcommg)} righe")
+        print(f"  - Foglio COMMGFNZ: {len(dati_commgfnz)} righe")
+        print(f"⏱️ Tempo di esecuzione: {execution_time:.2f} secondi")
         
     else:
-        print("✗ Nessun risultato da salvare")
+        print("✗ Nessun dato trovato")
 
-# ESECUZIONE
 if __name__ == "__main__":
     main()
