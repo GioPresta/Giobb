@@ -1,74 +1,123 @@
 import pandas as pd
 from datetime import datetime
 
-# File di input e output
-input_file = "REPCOMMG.TXT"
-output_file = "output_repcommg.xlsx"
-
-# Funzione per convertire la data da AAAAMMGG a datetime
-def converti_data(data_str):
-    if len(data_str.strip()) == 8:
-        try:
-            anno = int(data_str[0:4])
-            mese = int(data_str[4:6])
-            giorno = int(data_str[6:8])
-            return datetime(anno, mese, giorno)
-        except ValueError:
-            return ""
-    return ""
-
-# Leggi il file
-with open(input_file, 'r', encoding='utf-8') as f:
-    righe = f.readlines()
-
-print(f"File letto. Righe totali: {len(righe)}")
-
-# Debug: controlla le prime righe
-for i in range(min(3, len(righe))):
-    riga = righe[i]
-    print(f"\nRiga {i+1}:")
-    print(f"  Lunghezza: {len(riga)}")
-    print(f"  Contiene SD: {'SD' in riga}")
-    print(f"  Primi 50 caratteri: '{riga[:50]}'")
-    if len(riga) >= 137:
-        print(f"  Posizioni 121:129: '{riga[121:129]}'")
-        print(f"  Posizioni 129:137: '{riga[129:137]}'")
-
-print("\n" + "="*50)
-
-# Lista per i dati
-dati = []
-
-# Processa ogni riga
-for riga in righe:
-    if len(riga) < 137 or "SD" in riga:
-        continue
+def main():
+    print("=== PROCESSAMENTO REPCOMMG.TXT ===")
     
+    # 1. APERTURA FILE
     try:
-        polizza = riga[0:11].strip()
-        garanzia_raw = riga[11:16].strip()
-        garanzia = garanzia_raw[1:] if garanzia_raw.startswith('T') else garanzia_raw
-        fondo = riga[16:35].strip()
-        commissioni_str = riga[35:62].strip()
+        with open("REPCOMMG.TXT", "r", encoding="utf-8") as file:
+            lines = file.readlines()
+        print(f"✓ File aperto: {len(lines)} righe trovate")
+    except:
+        print("✗ Errore: impossibile aprire REPCOMMG.TXT")
+        return
+    
+    # 2. ANALISI PRELIMINARE
+    print("\n=== ANALISI RIGHE ===")
+    righe_valide = 0
+    righe_sd = 0
+    righe_corte = 0
+    
+    for line in lines:
+        if len(line) < 137:
+            righe_corte += 1
+        elif "SD" in line:
+            righe_sd += 1
+        else:
+            righe_valide += 1
+    
+    print(f"Righe totali: {len(lines)}")
+    print(f"Righe troppo corte (<137 char): {righe_corte}")
+    print(f"Righe con SD (da scartare): {righe_sd}")
+    print(f"Righe valide per processamento: {righe_valide}")
+    
+    # 3. MOSTRA ESEMPIO
+    if len(lines) > 0:
+        print(f"\n=== ESEMPIO PRIMA RIGA ===")
+        esempio = lines[0].rstrip()
+        print(f"Lunghezza: {len(esempio)}")
+        print(f"Contenuto: '{esempio[:100]}...'")
         
-        if commissioni_str and commissioni_str.isdigit():
-            commissioni = round(float(commissioni_str) / 10_000_000, 8)
+        if len(esempio) >= 137:
+            print(f"\nESTRAZIONE CAMPI:")
+            print(f"Polizza (0:11): '{esempio[0:11]}'")
+            print(f"Garanzia (11:16): '{esempio[11:16]}'")
+            print(f"Fondo (16:35): '{esempio[16:35]}'")
+            print(f"Commissioni (35:62): '{esempio[35:62]}'")
+            print(f"Data effetto (121:129): '{esempio[121:129]}'")
+            print(f"Data competenza (129:137): '{esempio[129:137]}'")
+    
+    # 4. PROCESSAMENTO VERO E PROPRIO
+    print(f"\n=== PROCESSAMENTO ===")
+    risultati = []
+    
+    for i, line in enumerate(lines):
+        # Salta righe problematiche
+        if len(line) < 137:
+            continue
+        if "SD" in line:
+            continue
+            
+        # Estrai campi
+        polizza = line[0:11].strip()
+        garanzia = line[11:16].strip()
+        if garanzia.startswith("T"):
+            garanzia = garanzia[1:]
+        fondo = line[16:35].strip()
+        
+        # Commissioni
+        comm_text = line[35:62].strip()
+        if comm_text.isdigit():
+            commissioni = float(comm_text) / 10_000_000
         else:
             commissioni = 0
         
-        data_effetto = converti_data(riga[121:129].strip())
-        data_competenza = converti_data(riga[129:137].strip())
+        # Date
+        data1_text = line[121:129].strip()
+        data2_text = line[129:137].strip()
         
-        if polizza:
-            dati.append([polizza, garanzia, fondo, commissioni, data_effetto, data_competenza])
-    except:
-        continue
+        # Converti date
+        data1 = None
+        data2 = None
+        
+        if len(data1_text) == 8 and data1_text.isdigit():
+            try:
+                data1 = datetime(int(data1_text[0:4]), int(data1_text[4:6]), int(data1_text[6:8]))
+            except:
+                data1 = None
+                
+        if len(data2_text) == 8 and data2_text.isdigit():
+            try:
+                data2 = datetime(int(data2_text[0:4]), int(data2_text[4:6]), int(data2_text[6:8]))
+            except:
+                data2 = None
+        
+        # Aggiungi risultato
+        risultati.append({
+            "Polizza": polizza,
+            "Garanzia": garanzia, 
+            "Fondo": fondo,
+            "Commissioni": commissioni,
+            "Data_effetto": data1,
+            "Data_competenza": data2
+        })
+    
+    print(f"✓ Processate {len(risultati)} righe")
+    
+    # 5. CREAZIONE EXCEL
+    if risultati:
+        df = pd.DataFrame(risultati)
+        df.to_excel("output_repcommg.xlsx", index=False)
+        print(f"✓ File Excel creato: output_repcommg.xlsx")
+        
+        # Mostra anteprima
+        print(f"\n=== ANTEPRIMA RISULTATI ===")
+        print(df.head())
+        
+    else:
+        print("✗ Nessun risultato da salvare")
 
-# Crea DataFrame con nomi colonne
-df = pd.DataFrame(dati, columns=['Polizza', 'Garanzia', 'Fondo', 'Commissioni', 'Data effetto', 'Data competenza'])
-
-# Salva Excel
-df.to_excel(output_file, index=False)
-
-print(f"File Excel creato: {output_file}")
-print(f"Righe processate: {len(df)}")
+# ESECUZIONE
+if __name__ == "__main__":
+    main()
