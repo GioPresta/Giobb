@@ -20,7 +20,7 @@ def main():
     righe_corte = 0
     
     for line in lines:
-        if len(line) < 137:
+        if len(line) < 81:  # Aggiornato per includere entrambe le date
             righe_corte += 1
         elif "SD" in line:
             righe_sd += 1
@@ -28,7 +28,7 @@ def main():
             righe_valide += 1
     
     print(f"Righe totali: {len(lines)}")
-    print(f"Righe troppo corte (<137 char): {righe_corte}")
+    print(f"Righe troppo corte (<81 char): {righe_corte}")  # Aggiornato
     print(f"Righe con SD (da scartare): {righe_sd}")
     print(f"Righe valide per processamento: {righe_valide}")
     
@@ -53,13 +53,13 @@ def main():
     risultati = []
     
     for i, line in enumerate(lines):
-        # Salta righe problematiche
-        if len(line) < 137:
+        # Salta righe problematiche - aggiornato per le nuove posizioni
+        if len(line) < 81:  # Deve contenere entrambe le date
             continue
         if "SD" in line:
             continue
             
-        # Estrai campi
+        # Estrai campi base
         polizza = line[0:11].strip()
         garanzia = line[11:16].strip()
         if garanzia.startswith("T"):
@@ -73,9 +73,9 @@ def main():
         else:
             commissioni = 0
         
-        # Date
-        data1_text = line[121:129].strip()
-        data2_text = line[129:137].strip()
+        # Date - posizioni corrette
+        data1_text = line[65:73].strip()
+        data2_text = line[73:81].strip()
         
         # Converti date
         data1 = None
@@ -85,13 +85,13 @@ def main():
             try:
                 data1 = datetime(int(data1_text[0:4]), int(data1_text[4:6]), int(data1_text[6:8]))
             except:
-                data1 = None
+                pass
                 
         if len(data2_text) == 8 and data2_text.isdigit():
             try:
                 data2 = datetime(int(data2_text[0:4]), int(data2_text[4:6]), int(data2_text[6:8]))
             except:
-                data2 = None
+                pass
         
         # Aggiungi risultato
         risultati.append({
