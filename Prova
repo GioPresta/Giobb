@@ -20,7 +20,7 @@ def main():
     righe_corte = 0
     
     for line in lines:
-        if len(line) < 81:  # Aggiornato per includere entrambe le date
+        if len(line) < 80:  # Aggiornato per le nuove posizioni
             righe_corte += 1
         elif "SD" in line:
             righe_sd += 1
@@ -28,7 +28,7 @@ def main():
             righe_valide += 1
     
     print(f"Righe totali: {len(lines)}")
-    print(f"Righe troppo corte (<81 char): {righe_corte}")  # Aggiornato
+    print(f"Righe troppo corte (<80 char): {righe_corte}")  # Aggiornato
     print(f"Righe con SD (da scartare): {righe_sd}")
     print(f"Righe valide per processamento: {righe_valide}")
     
@@ -54,54 +54,52 @@ def main():
     
     for i, line in enumerate(lines):
         # Salta righe problematiche - aggiornato per le nuove posizioni
-        if len(line) < 81:  # Deve contenere entrambe le date
+        if len(line) < 80:  # Aggiornato
             continue
         if "SD" in line:
             continue
             
         # Estrai campi base
-        polizza = line[0:11].strip()
+        polizza_text = line[0:11].strip()
+        polizza = int(polizza_text) if polizza_text.isdigit() else polizza_text  # Converti in numero se possibile
+        
         garanzia = line[11:16].strip()
         if garanzia.startswith("T"):
             garanzia = garanzia[1:]
         fondo = line[16:35].strip()
         
-        # Commissioni
+        # Commissioni - sempre come numero
         comm_text = line[35:62].strip()
         if comm_text.isdigit():
-            commissioni = float(comm_text) / 10_000_000
+            commissioni = float(comm_text) / 10_000_000  # Già numero
         else:
-            commissioni = 0
+            commissioni = 0.0  # Assicurati che sia float
         
-        # Date - posizioni corrette con debug
-        data1_text = line[65:73].strip()
-        data2_text = line[73:81].strip()
+        # Date - posizioni corrette aggiornate
+        data1_text = line[64:72].strip()  # Corretto da 65:73
+        data2_text = line[72:80].strip()  # Corretto da 73:81
         
-        # Debug per le prime 3 righe
-        if i < 3:
-            print(f"RIGA {i+1} - Debug date:")
-            print(f"  Pos 65:73 = '{data1_text}' (len={len(data1_text)}, isdigit={data1_text.isdigit()})")
-            print(f"  Pos 73:81 = '{data2_text}' (len={len(data2_text)}, isdigit={data2_text.isdigit()})")
-            # Mostra anche posizioni vicine
-            print(f"  Pos 63:71 = '{line[63:71].strip()}'")
-            print(f"  Pos 64:72 = '{line[64:72].strip()}'") 
-            print(f"  Pos 66:74 = '{line[66:74].strip()}'")
-            print(f"  Pos 71:79 = '{line[71:79].strip()}'")
-            print(f"  Pos 75:83 = '{line[75:83].strip()}'")
+        # Debug per le prime 3 righe (rimosso per velocità)
+        # if i < 3:
+        #     print(f"RIGA {i+1} - Debug date:")
+        #     print(f"  Pos 64:72 = '{data1_text}' (len={len(data1_text)}, isdigit={data1_text.isdigit()})")
+        #     print(f"  Pos 72:80 = '{data2_text}' (len={len(data2_text)}, isdigit={data2_text.isdigit()})")
         
-        # Converti date
+        # Converti date - solo la data senza orario
         data1 = None
         data2 = None
         
         if len(data1_text) == 8 and data1_text.isdigit():
             try:
-                data1 = datetime(int(data1_text[0:4]), int(data1_text[4:6]), int(data1_text[6:8]))
+                # Crea solo la data senza orario
+                data1 = datetime(int(data1_text[0:4]), int(data1_text[4:6]), int(data1_text[6:8])).date()
             except:
                 pass
                 
         if len(data2_text) == 8 and data2_text.isdigit():
             try:
-                data2 = datetime(int(data2_text[0:4]), int(data2_text[4:6]), int(data2_text[6:8]))
+                # Crea solo la data senza orario  
+                data2 = datetime(int(data2_text[0:4]), int(data2_text[4:6]), int(data2_text[6:8])).date()
             except:
                 pass
         
@@ -117,11 +115,36 @@ def main():
     
     print(f"✓ Processate {len(risultati)} righe")
     
-    # 5. CREAZIONE EXCEL
+    # 5. CREAZIONE EXCEL con formattazione date corretta
     if risultati:
         df = pd.DataFrame(risultati)
-        df.to_excel("output_repcommg.xlsx", index=False)
+        
+        # Salva Excel con formattazione speciale per le date
+        with pd.ExcelWriter("output_repcommg.xlsx", engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='REPCOMMG')
+            
+            # Accedi al foglio per formattare
+            workbook = writer.book
+            worksheet = writer.sheets['REPCOMMG']
+            
+            # Formati numerici
+            number_format = workbook.add_format({'num_format': '0'})  # Numero intero per Polizza
+            decimal_format = workbook.add_format({'num_format': '0.00000000'})  # 8 decimali per Commissioni
+            date_format = workbook.add_format({'num_format': 'dd/mm/yyyy'})  # Date
+            
+            # Applica formati alle colonne
+            for col_num, column_name in enumerate(df.columns):
+                if column_name == 'Polizza':
+                    worksheet.set_column(col_num, col_num, 12, number_format)
+                elif column_name == 'Commissioni':
+                    worksheet.set_column(col_num, col_num, 15, decimal_format)
+                elif 'Data' in column_name:
+                    worksheet.set_column(col_num, col_num, 12, date_format)
+        
         print(f"✓ File Excel creato: output_repcommg.xlsx")
+        print(f"  - Polizza: formattata come numero intero")
+        print(f"  - Commissioni: formattate con 8 decimali") 
+        print(f"  - Date: formattate DD/MM/YYYY")
         
         # Mostra anteprima
         print(f"\n=== ANTEPRIMA RISULTATI ===")
