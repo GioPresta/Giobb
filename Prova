@@ -75,6 +75,9 @@ def main():
         else:
             commissioni = 0.0  # Assicurati che sia float
         
+        # Tipo Operazione (tra commissioni e date)
+        tipo_op = line[62:64].strip()  # 2 caratteri tra pos 62-64
+        
         # Date - posizioni corrette aggiornate
         data1_text = line[64:72].strip()  # Corretto da 65:73
         data2_text = line[72:80].strip()  # Corretto da 73:81
@@ -103,12 +106,13 @@ def main():
             except:
                 pass
         
-        # Aggiungi risultato
+        # Aggiungi risultato con Tipo Operazione
         risultati.append({
             "Polizza": polizza,
             "Garanzia": garanzia, 
             "Fondo": fondo,
             "Commissioni": commissioni,
+            "Tipo_Operazione": tipo_op,
             "Data_effetto": data1,
             "Data_competenza": data2
         })
