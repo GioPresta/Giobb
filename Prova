@@ -257,101 +257,152 @@ def xml_to_xlsx_multiple_sheets(xml_file_path, xlsx_file_path):
 def parse_sql_insert_file(file_path):
     """
     Parsa un file SQL con INSERT statements e converte in DataFrame
-    Specifico per il formato EXPORT_TABLE mostrato nell'immagine
+    Versione migliorata per gestire valori complessi
     """
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
             content = file.read()
         
-        # Pattern per estrarre gli INSERT statements
-        insert_pattern = r'Insert into EXPORT_TABLE\s*\((.*?)\)\s*values\s*\((.*?)\);'
+        # Pattern migliorato per estrarre gli INSERT statements
+        insert_pattern = r'Insert\s+into\s+EXPORT_TABLE\s*\((.*?)\)\s+values\s*\((.*?)\)\s*;'
         
         # Trova tutti gli INSERT statements
         matches = re.findall(insert_pattern, content, re.IGNORECASE | re.DOTALL)
         
         if not matches:
             print("❌ Nessun INSERT statement trovato")
-            return None
+            print("🔍 Provo pattern alternativi...")
+            
+            # Pattern alternativo più flessibile
+            alt_pattern = r'Insert.*?EXPORT_TABLE.*?\((.*?)\).*?values.*?\((.*?)\)'
+            matches = re.findall(alt_pattern, content, re.IGNORECASE | re.DOTALL)
+            
+            if not matches:
+                print("❌ Nessun pattern riconosciuto")
+                return None
+        
+        print(f"📊 Trovati {len(matches)} INSERT statements")
         
         # Estrai i nomi delle colonne dal primo INSERT
         columns_raw = matches[0][0].strip()
-        # Rimuovi spazi extra e dividi per virgola
-        columns = [col.strip() for col in columns_raw.split(',')]
+        columns = [col.strip() for col in re.split(r',(?![^()]*\))', columns_raw)]
         
-        print(f"📋 Colonne trovate: {columns}")
+        print(f"📋 Colonne trovate ({len(columns)}): {columns}")
         
-        # Estrai tutti i valori
-        all_rows = []
-        for match in matches:
-            values_raw = match[1].strip()
-            
-            # Pattern per estrarre valori considerando virgolette e apostrofi
+        # Funzione migliorata per parsare i valori
+        def parse_values(values_string):
             values = []
-            current_value = ""
+            current = ""
             in_quotes = False
             quote_char = None
+            parentheses_count = 0
             i = 0
             
-            while i < len(values_raw):
-                char = values_raw[i]
+            while i < len(values_string):
+                char = values_string[i]
                 
-                if not in_quotes and char in ["'", '"']:
-                    in_quotes = True
-                    quote_char = char
-                    current_value += char
-                elif in_quotes and char == quote_char:
-                    # Controlla se è un escape (doppio apice)
-                    if i + 1 < len(values_raw) and values_raw[i + 1] == quote_char:
-                        current_value += char + char
-                        i += 1  # Salta il prossimo carattere
+                if not in_quotes:
+                    if char in ["'", '"']:
+                        in_quotes = True
+                        quote_char = char
+                        current += char
+                    elif char == '(':
+                        parentheses_count += 1
+                        current += char
+                    elif char == ')':
+                        parentheses_count -= 1
+                        current += char
+                    elif char == ',' and parentheses_count == 0:
+                        # Virgola a livello principale - separa i valori
+                        values.append(current.strip())
+                        current = ""
                     else:
-                        in_quotes = False
-                        current_value += char
-                        quote_char = None
-                elif not in_quotes and char == ',':
-                    values.append(current_value.strip())
-                    current_value = ""
+                        current += char
                 else:
-                    current_value += char
+                    # Siamo dentro le virgolette
+                    if char == quote_char:
+                        # Controlla se è un escape (doppio apice)
+                        if i + 1 < len(values_string) and values_string[i + 1] == quote_char:
+                            current += char + char
+                            i += 1  # Salta il prossimo carattere
+                        else:
+                            in_quotes = False
+                            current += char
+                            quote_char = None
+                    else:
+                        current += char
                 
                 i += 1
             
             # Aggiungi l'ultimo valore
-            if current_value.strip():
-                values.append(current_value.strip())
+            if current.strip():
+                values.append(current.strip())
             
-            # Pulisci i valori (rimuovi virgolette esterne)
-            cleaned_values = []
-            for val in values:
-                val = val.strip()
-                if val.startswith("'") and val.endswith("'"):
-                    val = val[1:-1].replace("''", "'")  # Rimuovi virgolette esterne e de-escape
-                elif val.startswith('"') and val.endswith('"'):
-                    val = val[1:-1].replace('""', '"')
-                cleaned_values.append(val)
-            
-            # Assicurati che il numero di valori corrisponda alle colonne
-            if len(cleaned_values) == len(columns):
-                all_rows.append(cleaned_values)
-            else:
-                print(f"⚠️  Riga ignorata: numero valori ({len(cleaned_values)}) != numero colonne ({len(columns)})")
+            return values
+        
+        # Elabora tutti i valori
+        all_rows = []
+        skipped_rows = 0
+        
+        for i, match in enumerate(matches):
+            try:
+                values_raw = match[1].strip()
+                values = parse_values(values_raw)
+                
+                # Pulisci i valori
+                cleaned_values = []
+                for val in values:
+                    val = val.strip()
+                    # Rimuovi virgolette esterne se presenti
+                    if len(val) >= 2:
+                        if (val.startswith("'") and val.endswith("'")) or \
+                           (val.startswith('"') and val.endswith('"')):
+                            val = val[1:-1]
+                            # De-escape virgolette doppie
+                            if "''" in val:
+                                val = val.replace("''", "'")
+                            if '""' in val:
+                                val = val.replace('""', '"')
+                    
+                    cleaned_values.append(val)
+                
+                # Debug per la prima riga
+                if i == 0:
+                    print(f"🔍 Prima riga - Valori trovati ({len(cleaned_values)}):")
+                    for j, val in enumerate(cleaned_values):
+                        print(f"  {j+1}. {val[:100]}...")
+                
+                # Verifica corrispondenza colonne
+                if len(cleaned_values) == len(columns):
+                    all_rows.append(cleaned_values)
+                else:
+                    skipped_rows += 1
+                    if skipped_rows <= 3:  # Mostra solo i primi errori
+                        print(f"⚠️  Riga {i+1}: {len(cleaned_values)} valori vs {len(columns)} colonne")
+                        if len(cleaned_values) < 10:  # Mostra valori solo se non troppi
+                            print(f"    Valori: {cleaned_values}")
+                
+            except Exception as e:
+                skipped_rows += 1
+                print(f"❌ Errore riga {i+1}: {str(e)}")
+        
+        if skipped_rows > 3:
+            print(f"⚠️  ... e altre {skipped_rows - 3} righe ignorate")
+        
+        if not all_rows:
+            print("❌ Nessuna riga valida trovata")
+            return None
         
         # Crea DataFrame
         df = pd.DataFrame(all_rows, columns=columns)
         
-        # Converti le date se presenti
-        for col in df.columns:
-            if 'data' in col.lower() or 'date' in col.lower():
-                try:
-                    df[col] = pd.to_datetime(df[col], errors='ignore')
-                except:
-                    pass
-        
-        print(f"✅ Elaborazione completata: {len(df)} righe trovate")
+        print(f"✅ Elaborazione completata: {len(df)} righe elaborate su {len(matches)} totali")
         return df
         
     except Exception as e:
         print(f"❌ Errore nel parsing SQL: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def sql_to_xlsx(sql_file_path, xlsx_file_path):
