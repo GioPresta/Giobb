@@ -256,75 +256,103 @@ def xml_to_xlsx_multiple_sheets(xml_file_path, xlsx_file_path):
 
 def parse_sql_insert_file(file_path):
     """
-    Parsa un file SQL con INSERT statements e converte in DataFrame
-    Versione migliorata per gestire valori complessi
+    Parsa un file SQL con INSERT statements - versione specifica per la struttura mostrata
     """
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
             content = file.read()
         
-        # Pattern migliorato per estrarre gli INSERT statements
-        insert_pattern = r'Insert\s+into\s+EXPORT_TABLE\s*\((.*?)\)\s+values\s*\((.*?)\)\s*;'
+        print("🔍 Analizzando il contenuto del file...")
         
-        # Trova tutti gli INSERT statements
-        matches = re.findall(insert_pattern, content, re.IGNORECASE | re.DOTALL)
+        # Trova tutte le righe INSERT
+        lines = content.split('\n')
+        insert_lines = []
         
-        if not matches:
+        for line in lines:
+            line = line.strip()
+            if line.lower().startswith('insert into export_table'):
+                insert_lines.append(line)
+        
+        if not insert_lines:
             print("❌ Nessun INSERT statement trovato")
-            print("🔍 Provo pattern alternativi...")
+            return None
+        
+        print(f"📊 Trovate {len(insert_lines)} righe INSERT")
+        
+        # Analizza la prima riga per capire la struttura
+        first_line = insert_lines[0]
+        print(f"🔍 Prima riga: {first_line[:200]}...")
+        
+        # Pattern più specifico per la tua struttura
+        # La struttura sembra essere: Insert into EXPORT_TABLE (col1,col2,col3,col4,col5,col6) values (val1,val2,val3,val4,val5,val6);
+        pattern = r'Insert\s+into\s+EXPORT_TABLE\s*\((.*?)\)\s+values\s*\((.*?)\)\s*;?'
+        
+        match = re.search(pattern, first_line, re.IGNORECASE)
+        if not match:
+            print("❌ Pattern non riconosciuto nella prima riga")
+            print("🔍 Provo a estrarre manualmente...")
             
-            # Pattern alternativo più flessibile
-            alt_pattern = r'Insert.*?EXPORT_TABLE.*?\((.*?)\).*?values.*?\((.*?)\)'
-            matches = re.findall(alt_pattern, content, re.IGNORECASE | re.DOTALL)
-            
-            if not matches:
-                print("❌ Nessun pattern riconosciuto")
+            # Estrazione manuale
+            if '(' in first_line and ')' in first_line:
+                # Trova le parentesi delle colonne
+                col_start = first_line.find('(')
+                col_end = first_line.find(')', col_start)
+                columns_raw = first_line[col_start+1:col_end]
+                
+                # Trova le parentesi dei valori
+                val_start = first_line.find('(', col_end)
+                val_end = first_line.rfind(')')
+                values_raw = first_line[val_start+1:val_end]
+                
+                print(f"📋 Colonne estratte: {columns_raw}")
+                print(f"📄 Valori estratti: {values_raw[:100]}...")
+            else:
+                print("❌ Impossibile estrarre colonne e valori")
                 return None
+        else:
+            columns_raw = match.group(1)
+            values_raw = match.group(2)
         
-        print(f"📊 Trovati {len(matches)} INSERT statements")
+        # Pulisci i nomi delle colonne
+        columns = [col.strip() for col in columns_raw.split(',')]
+        print(f"📋 Colonne ({len(columns)}): {columns}")
         
-        # Estrai i nomi delle colonne dal primo INSERT
-        columns_raw = matches[0][0].strip()
-        columns = [col.strip() for col in re.split(r',(?![^()]*\))', columns_raw)]
-        
-        print(f"📋 Colonne trovate ({len(columns)}): {columns}")
-        
-        # Funzione migliorata per parsare i valori
-        def parse_values(values_string):
+        # Funzione per parsare i valori con gestione avanzata delle virgolette
+        def smart_split_values(values_string):
             values = []
             current = ""
             in_quotes = False
             quote_char = None
-            parentheses_count = 0
+            parentheses_depth = 0
             i = 0
             
             while i < len(values_string):
                 char = values_string[i]
                 
                 if not in_quotes:
-                    if char in ["'", '"']:
+                    if char == "'":
                         in_quotes = True
                         quote_char = char
                         current += char
                     elif char == '(':
-                        parentheses_count += 1
+                        parentheses_depth += 1
                         current += char
                     elif char == ')':
-                        parentheses_count -= 1
+                        parentheses_depth -= 1
                         current += char
-                    elif char == ',' and parentheses_count == 0:
-                        # Virgola a livello principale - separa i valori
+                    elif char == ',' and parentheses_depth == 0:
+                        # Virgola al livello principale - nuovo valore
                         values.append(current.strip())
                         current = ""
                     else:
                         current += char
                 else:
-                    # Siamo dentro le virgolette
+                    # Dentro le virgolette
                     if char == quote_char:
-                        # Controlla se è un escape (doppio apice)
+                        # Controlla se è escaped
                         if i + 1 < len(values_string) and values_string[i + 1] == quote_char:
                             current += char + char
-                            i += 1  # Salta il prossimo carattere
+                            i += 1
                         else:
                             in_quotes = False
                             current += char
@@ -334,69 +362,71 @@ def parse_sql_insert_file(file_path):
                 
                 i += 1
             
-            # Aggiungi l'ultimo valore
+            # Aggiungi ultimo valore
             if current.strip():
                 values.append(current.strip())
             
             return values
         
-        # Elabora tutti i valori
+        # Elabora tutte le righe INSERT
         all_rows = []
-        skipped_rows = 0
+        errors = 0
         
-        for i, match in enumerate(matches):
+        for i, line in enumerate(insert_lines):
             try:
-                values_raw = match[1].strip()
-                values = parse_values(values_raw)
+                # Estrai i valori dalla riga
+                match = re.search(pattern, line, re.IGNORECASE)
+                if match:
+                    values_raw = match.group(2)
+                else:
+                    # Estrazione manuale di fallback
+                    val_start = line.find('(', line.find('values'))
+                    val_end = line.rfind(')')
+                    if val_start != -1 and val_end != -1:
+                        values_raw = line[val_start+1:val_end]
+                    else:
+                        errors += 1
+                        continue
+                
+                # Parsa i valori
+                values = smart_split_values(values_raw)
                 
                 # Pulisci i valori
                 cleaned_values = []
                 for val in values:
                     val = val.strip()
-                    # Rimuovi virgolette esterne se presenti
-                    if len(val) >= 2:
-                        if (val.startswith("'") and val.endswith("'")) or \
-                           (val.startswith('"') and val.endswith('"')):
-                            val = val[1:-1]
-                            # De-escape virgolette doppie
-                            if "''" in val:
-                                val = val.replace("''", "'")
-                            if '""' in val:
-                                val = val.replace('""', '"')
-                    
+                    # Rimuovi virgolette esterne
+                    if len(val) >= 2 and val.startswith("'") and val.endswith("'"):
+                        val = val[1:-1].replace("''", "'")
                     cleaned_values.append(val)
                 
-                # Debug per la prima riga
-                if i == 0:
-                    print(f"🔍 Prima riga - Valori trovati ({len(cleaned_values)}):")
-                    for j, val in enumerate(cleaned_values):
-                        print(f"  {j+1}. {val[:100]}...")
+                # Debug per le prime righe
+                if i < 3:
+                    print(f"📄 Riga {i+1}: {len(cleaned_values)} valori vs {len(columns)} colonne")
+                    if len(cleaned_values) != len(columns):
+                        print(f"    Valori: {cleaned_values}")
                 
-                # Verifica corrispondenza colonne
                 if len(cleaned_values) == len(columns):
                     all_rows.append(cleaned_values)
                 else:
-                    skipped_rows += 1
-                    if skipped_rows <= 3:  # Mostra solo i primi errori
-                        print(f"⚠️  Riga {i+1}: {len(cleaned_values)} valori vs {len(columns)} colonne")
-                        if len(cleaned_values) < 10:  # Mostra valori solo se non troppi
-                            print(f"    Valori: {cleaned_values}")
-                
+                    errors += 1
+                    
             except Exception as e:
-                skipped_rows += 1
-                print(f"❌ Errore riga {i+1}: {str(e)}")
+                errors += 1
+                if i < 5:  # Mostra errori solo per le prime righe
+                    print(f"❌ Errore riga {i+1}: {str(e)}")
         
-        if skipped_rows > 3:
-            print(f"⚠️  ... e altre {skipped_rows - 3} righe ignorate")
+        print(f"✅ Elaborate {len(all_rows)} righe, {errors} errori")
         
         if not all_rows:
             print("❌ Nessuna riga valida trovata")
+            # Mostra un esempio di cosa ha trovato
+            if insert_lines:
+                print(f"🔍 Esempio prima riga: {insert_lines[0]}")
             return None
         
         # Crea DataFrame
         df = pd.DataFrame(all_rows, columns=columns)
-        
-        print(f"✅ Elaborazione completata: {len(df)} righe elaborate su {len(matches)} totali")
         return df
         
     except Exception as e:
