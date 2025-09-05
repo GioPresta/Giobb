@@ -1,1 +1,448 @@
-https://maps.app.goo.gl/8kXKXQsrtfk179i37?g_st=ac
+import xml.etree.ElementTree as ET
+import pandas as pd
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils.dataframe import dataframe_to_rows
+import json
+import re
+from datetime import datetime
+
+def xml_to_dict(element):
+    """Converte un elemento XML in dizionario"""
+    result = {}
+    
+    # Aggiungi attributi
+    if element.attrib:
+        result.update(element.attrib)
+    
+    # Gestisci elementi figli
+    children = list(element)
+    if children:
+        child_dict = {}
+        for child in children:
+            child_data = xml_to_dict(child)
+            if child.tag in child_dict:
+                # Se esiste già, crea una lista
+                if not isinstance(child_dict[child.tag], list):
+                    child_dict[child.tag] = [child_dict[child.tag]]
+                child_dict[child.tag].append(child_data)
+            else:
+                child_dict[child.tag] = child_data
+        result.update(child_dict)
+    
+    # Aggiungi testo se presente
+    if element.text and element.text.strip():
+        if result:
+            result['_text'] = element.text.strip()
+        else:
+            return element.text.strip()
+    
+    return result
+
+def flatten_dict(d, parent_key='', sep='_'):
+    """Appiattisce un dizionario annidato"""
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        elif isinstance(v, list):
+            for i, item in enumerate(v):
+                if isinstance(item, dict):
+                    items.extend(flatten_dict(item, f"{new_key}_{i}", sep=sep).items())
+                else:
+                    items.append((f"{new_key}_{i}", item))
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+def apply_formatting(worksheet):
+    """Applica formattazione al foglio Excel"""
+    # Stile header
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+    header_alignment = Alignment(horizontal="center", vertical="center")
+    
+    # Bordi
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    # Applica stile agli header (prima riga)
+    for cell in worksheet[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = thin_border
+    
+    # Applica bordi a tutte le celle con dati
+    for row in worksheet.iter_rows():
+        for cell in row:
+            if cell.value is not None:
+                cell.border = thin_border
+                if cell.row > 1:  # Non header
+                    cell.alignment = Alignment(vertical="center")
+    
+    # Auto-dimensiona le colonne
+    for column in worksheet.columns:
+        max_length = 0
+        column_letter = column[0].column_letter
+        
+        for cell in column:
+            if cell.value:
+                max_length = max(max_length, len(str(cell.value)))
+        
+        adjusted_width = min(max_length + 2, 50)  # Max 50 caratteri
+        worksheet.column_dimensions[column_letter].width = adjusted_width
+
+def xml_to_xlsx(xml_file_path, xlsx_file_path, flatten=True):
+    """
+    Converte XML in XLSX con formattazione
+    
+    Args:
+        xml_file_path (str): Percorso del file XML
+        xlsx_file_path (str): Percorso del file XLSX di output
+        flatten (bool): Se appiattire la struttura XML annidata
+    """
+    try:
+        # Leggi e parsa XML
+        tree = ET.parse(xml_file_path)
+        root = tree.getroot()
+        
+        # Converte XML in dizionario
+        data_dict = xml_to_dict(root)
+        
+        # Gestisci diversi tipi di struttura XML
+        if isinstance(data_dict, dict):
+            # Cerca il primo livello che contiene liste (record multipli)
+            records = []
+            
+            def find_records(obj, path=""):
+                nonlocal records
+                if isinstance(obj, list):
+                    records.extend(obj)
+                elif isinstance(obj, dict):
+                    for key, value in obj.items():
+                        find_records(value, f"{path}.{key}" if path else key)
+            
+            find_records(data_dict)
+            
+            # Se non troviamo record multipli, usa l'oggetto root
+            if not records:
+                records = [data_dict]
+        else:
+            records = [data_dict]
+        
+        # Appiattisci i dizionari se richiesto
+        if flatten:
+            flattened_records = []
+            for record in records:
+                if isinstance(record, dict):
+                    flattened_records.append(flatten_dict(record))
+                else:
+                    flattened_records.append({'value': record})
+            records = flattened_records
+        
+        # Converti in DataFrame
+        df = pd.DataFrame(records)
+        
+        # Se il DataFrame è vuoto, crea uno con i dati raw
+        if df.empty:
+            df = pd.DataFrame([{'root': str(data_dict)}])
+        
+        # Crea workbook Excel
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "XML_Data"
+        
+        # Aggiungi dati al foglio
+        for r in dataframe_to_rows(df, index=False, header=True):
+            ws.append(r)
+        
+        # Applica formattazione
+        apply_formatting(ws)
+        
+        # Salva file
+        wb.save(xlsx_file_path)
+        
+        print(f"✅ Conversione completata!")
+        print(f"📁 File salvato: {xlsx_file_path}")
+        print(f"📊 Righe elaborate: {len(df)}")
+        print(f"📋 Colonne: {len(df.columns)}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Errore durante la conversione: {str(e)}")
+        return False
+
+def xml_to_xlsx_multiple_sheets(xml_file_path, xlsx_file_path):
+    """
+    Versione avanzata che crea fogli separati per diversi tipi di elementi
+    """
+    try:
+        tree = ET.parse(xml_file_path)
+        root = tree.getroot()
+        
+        wb = Workbook()
+        # Rimuovi il foglio default
+        wb.remove(wb.active)
+        
+        # Raggruppa elementi per tag
+        elements_by_tag = {}
+        
+        def collect_elements(element, parent_tag=""):
+            tag = element.tag
+            full_tag = f"{parent_tag}_{tag}" if parent_tag else tag
+            
+            if full_tag not in elements_by_tag:
+                elements_by_tag[full_tag] = []
+            
+            element_dict = xml_to_dict(element)
+            elements_by_tag[full_tag].append(element_dict)
+            
+            # Esplora elementi figli
+            for child in element:
+                collect_elements(child, full_tag)
+        
+        # Raccogli tutti gli elementi
+        for child in root:
+            collect_elements(child)
+        
+        # Se non ci sono elementi figli, usa il root
+        if not elements_by_tag:
+            elements_by_tag[root.tag] = [xml_to_dict(root)]
+        
+        # Crea un foglio per ogni tipo di elemento
+        for tag, elements in elements_by_tag.items():
+            if elements:
+                # Pulisci nome foglio (Excel ha limitazioni)
+                sheet_name = tag.replace("/", "_").replace("\\", "_")[:31]
+                
+                # Appiattisci elementi
+                flattened = [flatten_dict(elem) if isinstance(elem, dict) else {'value': elem} 
+                           for elem in elements]
+                
+                df = pd.DataFrame(flattened)
+                
+                if not df.empty:
+                    ws = wb.create_sheet(title=sheet_name)
+                    
+                    # Aggiungi dati
+                    for r in dataframe_to_rows(df, index=False, header=True):
+                        ws.append(r)
+                    
+                    # Applica formattazione
+                    apply_formatting(ws)
+        
+        # Se non ci sono fogli, crea uno vuoto
+        if not wb.worksheets:
+            ws = wb.create_sheet(title="Empty")
+            ws.append(["Nessun dato trovato nel file XML"])
+        
+        wb.save(xlsx_file_path)
+        
+        print(f"✅ Conversione completata con {len(wb.worksheets)} fogli!")
+        print(f"📁 File salvato: {xlsx_file_path}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Errore durante la conversione: {str(e)}")
+        return False
+
+def parse_sql_insert_file(file_path):
+    """
+    Parsa un file SQL con INSERT statements e converte in DataFrame
+    Specifico per il formato EXPORT_TABLE mostrato nell'immagine
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+        
+        # Pattern per estrarre gli INSERT statements
+        insert_pattern = r'Insert into EXPORT_TABLE\s*\((.*?)\)\s*values\s*\((.*?)\);'
+        
+        # Trova tutti gli INSERT statements
+        matches = re.findall(insert_pattern, content, re.IGNORECASE | re.DOTALL)
+        
+        if not matches:
+            print("❌ Nessun INSERT statement trovato")
+            return None
+        
+        # Estrai i nomi delle colonne dal primo INSERT
+        columns_raw = matches[0][0].strip()
+        # Rimuovi spazi extra e dividi per virgola
+        columns = [col.strip() for col in columns_raw.split(',')]
+        
+        print(f"📋 Colonne trovate: {columns}")
+        
+        # Estrai tutti i valori
+        all_rows = []
+        for match in matches:
+            values_raw = match[1].strip()
+            
+            # Pattern per estrarre valori considerando virgolette e apostrofi
+            values = []
+            current_value = ""
+            in_quotes = False
+            quote_char = None
+            i = 0
+            
+            while i < len(values_raw):
+                char = values_raw[i]
+                
+                if not in_quotes and char in ["'", '"']:
+                    in_quotes = True
+                    quote_char = char
+                    current_value += char
+                elif in_quotes and char == quote_char:
+                    # Controlla se è un escape (doppio apice)
+                    if i + 1 < len(values_raw) and values_raw[i + 1] == quote_char:
+                        current_value += char + char
+                        i += 1  # Salta il prossimo carattere
+                    else:
+                        in_quotes = False
+                        current_value += char
+                        quote_char = None
+                elif not in_quotes and char == ',':
+                    values.append(current_value.strip())
+                    current_value = ""
+                else:
+                    current_value += char
+                
+                i += 1
+            
+            # Aggiungi l'ultimo valore
+            if current_value.strip():
+                values.append(current_value.strip())
+            
+            # Pulisci i valori (rimuovi virgolette esterne)
+            cleaned_values = []
+            for val in values:
+                val = val.strip()
+                if val.startswith("'") and val.endswith("'"):
+                    val = val[1:-1].replace("''", "'")  # Rimuovi virgolette esterne e de-escape
+                elif val.startswith('"') and val.endswith('"'):
+                    val = val[1:-1].replace('""', '"')
+                cleaned_values.append(val)
+            
+            # Assicurati che il numero di valori corrisponda alle colonne
+            if len(cleaned_values) == len(columns):
+                all_rows.append(cleaned_values)
+            else:
+                print(f"⚠️  Riga ignorata: numero valori ({len(cleaned_values)}) != numero colonne ({len(columns)})")
+        
+        # Crea DataFrame
+        df = pd.DataFrame(all_rows, columns=columns)
+        
+        # Converti le date se presenti
+        for col in df.columns:
+            if 'data' in col.lower() or 'date' in col.lower():
+                try:
+                    df[col] = pd.to_datetime(df[col], errors='ignore')
+                except:
+                    pass
+        
+        print(f"✅ Elaborazione completata: {len(df)} righe trovate")
+        return df
+        
+    except Exception as e:
+        print(f"❌ Errore nel parsing SQL: {str(e)}")
+        return None
+
+def sql_to_xlsx(sql_file_path, xlsx_file_path):
+    """
+    Converte un file SQL con INSERT statements in XLSX formattato
+    """
+    try:
+        # Parsa il file SQL
+        df = parse_sql_insert_file(sql_file_path)
+        
+        if df is None or df.empty:
+            print("❌ Nessun dato da convertire")
+            return False
+        
+        # Crea workbook Excel
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "EXPORT_TABLE"
+        
+        # Aggiungi dati al foglio
+        for r in dataframe_to_rows(df, index=False, header=True):
+            ws.append(r)
+        
+        # Applica formattazione
+        apply_formatting(ws)
+        
+        # Formattazione speciale per colonne specifiche
+        for col_num, col_name in enumerate(df.columns, 1):
+            col_letter = ws.cell(row=1, column=col_num).column_letter
+            
+            # Formattazione per colonne numeriche (VALORE_QUOTE, etc.)
+            if 'valore' in col_name.lower() or 'quote' in col_name.lower():
+                for row in range(2, len(df) + 2):
+                    cell = ws.cell(row=row, column=col_num)
+                    if cell.value and str(cell.value).replace('.', '').replace(',', '').isdigit():
+                        try:
+                            cell.value = float(str(cell.value).replace(',', '.'))
+                            cell.number_format = '#,##0.00'
+                        except:
+                            pass
+            
+            # Formattazione per date
+            elif 'data' in col_name.lower():
+                for row in range(2, len(df) + 2):
+                    cell = ws.cell(row=row, column=col_num)
+                    if cell.value:
+                        cell.number_format = 'DD/MM/YYYY'
+        
+        # Salva file
+        wb.save(xlsx_file_path)
+        
+        print(f"✅ Conversione SQL completata!")
+        print(f"📁 File salvato: {xlsx_file_path}")
+        print(f"📊 Righe elaborate: {len(df)}")
+        print(f"📋 Colonne: {len(df.columns)}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Errore durante la conversione SQL: {str(e)}")
+        return False
+
+def auto_detect_and_convert(input_file, output_file):
+    """
+    Rileva automaticamente il tipo di file e applica la conversione appropriata
+    """
+    try:
+        with open(input_file, 'r', encoding='utf-8') as f:
+            first_lines = f.read(1000).lower()
+        
+        if 'insert into' in first_lines and 'values' in first_lines:
+            print("📄 Rilevato file SQL con INSERT statements")
+            return sql_to_xlsx(input_file, output_file)
+        elif '<?xml' in first_lines or '<' in first_lines:
+            print("📄 Rilevato file XML")
+            return xml_to_xlsx(input_file, output_file)
+        else:
+            print("❌ Formato file non riconosciuto")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Errore nel rilevamento tipo file: {str(e)}")
+        return False
+
+# Esempio di utilizzo
+if __name__ == "__main__":
+    # Auto-rilevamento e conversione
+    auto_detect_and_convert("export.xml", "output.xlsx")
+    
+    # Conversione SQL specifica
+    # sql_to_xlsx("export.sql", "output_sql.xlsx")
+    
+    # Conversione XML classica
+    # xml_to_xlsx("input.xml", "output_xml.xlsx")
