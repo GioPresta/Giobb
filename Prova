@@ -1,33 +1,146 @@
-REGOLAMENTO
-1. Ognisquadra deve essere composta da 8 atleti (tesserati e non), indifferentemente donne e/o uomini. Ogni atleta dovrà 
-correre/camminare sulla pista di atletica preferibilmente una sola volta e per una sola squadra e dovrà garantire il cambio 
-ogni 20 minuti. L’andatura è libera (passo o corsa). Nonostante che il circuito sia adeguatamente delimitato, è comunque 
-obbligatorio prestare attenzione e seguire le segnalazioni e le istruzioni degli organizzatori.
-2. La partecipazione alla manifestazione è aperta a tutti. Nella lista di presentazione degli atleti, ogni squadra indica il 
-nominativo del capitano. Ogni squadra deve garantire la presenza del capitano o persona che ne fa le veci durante tutta 
-la durata della manifestazione.
-3. La partenza della prima frazione verrà data alle ore 10.00. “8x20” significa che ogni squadra è composta da 8 elementi. 
-Ogni elemento della squadra è un frazionista perché cammina o corre per 20 minuti intorno alla pista di atletica. Scaduti i 
-20’ (lo speaker della manifestazione avvertirà della scadenza) il primo frazionista deve terminare il giro fino al traguardo
-e lasciare il testimone al secondo frazionista della propria squadra e così via fino all’ultimo frazionista. L’atleta dell’ultima 
-frazione alla scadenza dei 20 minuti, segnalati con un colpo di pistola preventivo a 1 minuto dalla fine e con un colpo di 
-pistola allo scadere dei 20 minuti deve fermarsi, posare a terra il testimone, e aspettare l’arrivo dei giudici per la 
-misurazione finale. Gli atleti in attesa del cambio turno devono collocarsi nello spazio appositamente predisposto.
-4. È consigliato per gli atleti con passo ed andatura più lenti camminare sulla parte destra e le corsie più laterali della pista 
-di atletica al fine di evitare collisioni con atleti che hanno un’andatura più veloce.
-5. È fatto divieto di introdurre sulla pista di atletica animali di qualsiasi genere e razza, anche se è possibile portarli 
-all’interno dello Stadio e del villaggio adibito all’evento. È fatto divieto inoltre utilizzare durante la gara strumenti o mezzi 
-che possono danneggiare in qualsiasi modo la pista di atletica.
-6. Il ritrovo per i responsabili di ogni squadra per il ritiro della busta con i pettorali è fissato a partire dalle ore 9:00 di 
-sabato 4 Ottobre 2024, presso l’ingresso del centro sportivo.
-7. Ad ogni squadra prima della partenza verrà consegnato un testimone con un chip, che rappresenterà la squadra e dovrà 
-essere portato da tutti i partecipanti fino all’arrivo dell’ultimo.
-8. I passaggi nel punto di partenza ed arrivo degli atleti concorrenti verranno rilevati dalla società di Cronometraggio. Al 
-termine della Staffetta sarà redatto l’ordine di arrivo e si procederà successivamente alla premiazione delle prime 3 
-squadre (Coppa + medaglie per gli 8 componenti della squadra).
-9. Si richiede a tutti i partecipanti il rispetto della struttura che ospita l’evento, gentilmente concessa dal Politecnico di 
-Milano. Saranno allestiti appositi contenitori per gettare e differenziare irifiuti: non siamo al 100% plastic free, ma abbiamo 
-ridotto al minimo indispensabile l’utilizzo della plastica. È comunque fondamentale che la plastica venga gettata negli 
-appositi contenitori per garantirne il riutilizzo.
-10. L’organizzazione si riserva la possibilità di modificare ogni clausola del presente regolamento per motivi di 
-forza maggiore. Per quanto non previsto nel presente regolamento si rimanda ai regolamenti ed alle leggi vigenti.
+"""
+DISCLAIMER: Questo codice è SOLO per scopi educativi.
+NON utilizzare su Teams o altre applicazioni aziendali.
+L'uso improprio può violare policy e causare conseguenze legali/lavorative.
+"""
+
+import pyautogui
+import time
+import random
+
+# Disabilita il failsafe (muovi mouse in angolo per fermare)
+pyautogui.FAILSAFE = True
+
+def click_casuale(x, y, variazione=5):
+    """
+    Click con piccola variazione per sembrare più umano
+    """
+    click_x = x + random.randint(-variazione, variazione)
+    click_y = y + random.randint(-variazione, variazione)
+    pyautogui.click(click_x, click_y)
+    print(f"Click effettuato a: ({click_x}, {click_y})")
+
+def movimento_mouse_casuale():
+    """
+    Muove il mouse in modo casuale per simulare attività
+    """
+    screen_width, screen_height = pyautogui.size()
+    x = random.randint(100, screen_width - 100)
+    y = random.randint(100, screen_height - 100)
+    
+    durata = random.uniform(0.5, 2.0)
+    pyautogui.moveTo(x, y, duration=durata)
+    print(f"Mouse mosso a: ({x}, {y})")
+
+def autoclicker_base(intervallo_min=60, intervallo_max=180, durata_minuti=30):
+    """
+    Autoclicker base con intervalli casuali
+    
+    Args:
+        intervallo_min: Secondi minimi tra azioni
+        intervallo_max: Secondi massimi tra azioni
+        durata_minuti: Durata totale in minuti
+    """
+    print("Autoclicker avviato. Premi Ctrl+C per fermare.")
+    print("Muovi il mouse nell'angolo superiore sinistro per emergenza (failsafe)")
+    
+    # Tempo di preparazione
+    print("Inizio tra 5 secondi...")
+    time.sleep(5)
+    
+    start_time = time.time()
+    durata_secondi = durata_minuti * 60
+    
+    try:
+        while (time.time() - start_time) < durata_secondi:
+            # Intervallo casuale tra azioni
+            intervallo = random.randint(intervallo_min, intervallo_max)
+            
+            # Scelta casuale dell'azione
+            azione = random.choice(['click', 'movimento', 'entrambi'])
+            
+            if azione == 'click':
+                # Coordinate da determinare manualmente
+                # Esempio: area centrale dello schermo
+                screen_w, screen_h = pyautogui.size()
+                click_casuale(screen_w // 2, screen_h // 2, variazione=100)
+                
+            elif azione == 'movimento':
+                movimento_mouse_casuale()
+                
+            else:
+                movimento_mouse_casuale()
+                time.sleep(0.5)
+                screen_w, screen_h = pyautogui.size()
+                click_casuale(screen_w // 2, screen_h // 2, variazione=100)
+            
+            print(f"Prossima azione tra {intervallo} secondi...")
+            time.sleep(intervallo)
+            
+    except KeyboardInterrupt:
+        print("\nAutoclicker fermato dall'utente.")
+    except Exception as e:
+        print(f"\nErrore: {e}")
+
+def trova_coordinate():
+    """
+    Utility per trovare le coordinate del mouse
+    Utile per identificare dove cliccare
+    """
+    print("Muovi il mouse sulla posizione desiderata.")
+    print("Le coordinate verranno stampate ogni 2 secondi.")
+    print("Premi Ctrl+C per fermare.")
+    
+    try:
+        while True:
+            x, y = pyautogui.position()
+            print(f"Posizione mouse: X={x}, Y={y}", end='\r')
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        print("\nRilevamento coordinate fermato.")
+
+# Esempio di utilizzo con coordinate specifiche
+def autoclicker_coordinate_specifiche(coordinate_lista, intervallo=120):
+    """
+    Click su coordinate specifiche in sequenza
+    
+    Args:
+        coordinate_lista: Lista di tuple (x, y)
+        intervallo: Secondi tra ogni ciclo
+    """
+    print(f"Avvio click su {len(coordinate_lista)} posizioni...")
+    time.sleep(5)
+    
+    try:
+        while True:
+            for x, y in coordinate_lista:
+                click_casuale(x, y)
+                time.sleep(random.uniform(0.5, 2.0))
+            
+            print(f"Ciclo completato. Attesa {intervallo} secondi...")
+            time.sleep(intervallo)
+            
+    except KeyboardInterrupt:
+        print("\nAutoclicker fermato.")
+
+# MAIN - Decommenta la funzione che vuoi testare
+if __name__ == "__main__":
+    print("=" * 50)
+    print("AUTOCLICKER EDUCATIVO")
+    print("=" * 50)
+    print("\nATTENZIONE: Non usare su applicazioni aziendali!")
+    print("\nOpzioni disponibili:")
+    print("1. trova_coordinate() - Trova coordinate mouse")
+    print("2. autoclicker_base() - Autoclicker con azioni casuali")
+    print("3. autoclicker_coordinate_specifiche() - Click su posizioni specifiche")
+    print("\nDecommenta la funzione desiderata nel codice.")
+    
+    # Esempio 1: Trova coordinate
+    # trova_coordinate()
+    
+    # Esempio 2: Autoclicker base (2-3 minuti tra azioni, per 30 minuti)
+    # autoclicker_base(intervallo_min=120, intervallo_max=180, durata_minuti=30)
+    
+    # Esempio 3: Click su coordinate specifiche
+    # coordinate = [(500, 500), (600, 600), (700, 400)]
+    # autoclicker_coordinate_specifiche(coordinate, intervallo=300)
