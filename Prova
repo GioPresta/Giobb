@@ -14,10 +14,22 @@ def get_working_directory():
         return os.path.dirname(os.path.abspath(__file__))
 
 
+def chiedi_conferma(percorso_file, tipo):
+    """
+    Mostra il file trovato e chiede conferma all'utente (S/N).
+    Se l'utente risponde N, ritorna False.
+    """
+    print(f"\n📄 File trovato per '{tipo}':")
+    print(f"   👉 {os.path.basename(percorso_file)}")
+    print(f"   📁 Percorso completo: {percorso_file}")
+    risposta = input(f"Vuoi usare questo file per '{tipo}'? (S/N): ").strip().upper()
+    return risposta == "S"
+
+
 def trova_file(base_name):
     """
     Cerca un file che contiene il nome base (es. REPCOMMG o COMMGFNZ)
-    nella cartella di lavoro, ignorando eventuali numeri o prefissi/suffissi.
+    nella cartella di lavoro, ignorando eventuali numeri o suffissi.
     """
     cartella = get_working_directory()
     pattern = os.path.join(cartella, f"*{base_name}*.TXT")
@@ -27,10 +39,30 @@ def trova_file(base_name):
         print(f"⚠️  ATTENZIONE: Nessun file trovato che contenga '{base_name}'")
         return None
 
-    # Se ci sono più file, prende quello più recente (per data di modifica)
-    file_scelto = max(files_trovati, key=os.path.getmtime)
-    print(f"📄 Trovato file per '{base_name}': {os.path.basename(file_scelto)}")
-    return file_scelto
+    # Ordina per data di modifica (dal più recente)
+    files_trovati.sort(key=os.path.getmtime, reverse=True)
+
+    # Mostra tutti i file trovati
+    print(f"\n📂 File trovati per '{base_name}':")
+    for i, f in enumerate(files_trovati, 1):
+        data_mod = time.strftime("%d/%m/%Y %H:%M:%S", time.localtime(os.path.getmtime(f)))
+        print(f" {i}. {os.path.basename(f)}  (modificato il {data_mod})")
+
+    # Prende il più recente come predefinito e chiede conferma
+    file_scelto = files_trovati[0]
+    if chiedi_conferma(file_scelto, base_name):
+        return file_scelto
+    else:
+        # Se l’utente dice N, permette di scegliere un altro file
+        while True:
+            scelta = input("Inserisci il numero del file che vuoi usare oppure premi INVIO per annullare: ").strip()
+            if scelta == "":
+                print("❌ Operazione annullata.")
+                return None
+            if scelta.isdigit() and 1 <= int(scelta) <= len(files_trovati):
+                return files_trovati[int(scelta) - 1]
+            else:
+                print("⚠️ Scelta non valida. Riprova.")
 
 
 def processare_repcommg():
@@ -53,31 +85,22 @@ def processare_repcommg():
 
         polizza_text = line[0:11].strip()
         polizza = int(polizza_text) if polizza_text.isdigit() else polizza_text
-
-        garanzia = line[11:16].strip()
-        if garanzia.startswith("T"):
-            garanzia = garanzia[1:]
-
+        garanzia = line[11:16].strip().lstrip("T")
         fondo = line[16:35].strip()
-
         comm_text = line[35:62].strip()
         commissioni = float(comm_text) / 10_000_000 if comm_text.isdigit() else 0.0
-
         tipo_op = line[62:64].strip()
-
-        data1_text = line[64:72].strip()
-        data2_text = line[72:80].strip()
 
         def parse_data(txt):
             if len(txt) == 8 and txt.isdigit():
                 try:
                     return datetime(int(txt[:4]), int(txt[4:6]), int(txt[6:8])).date()
                 except:
-                    return None
+                    pass
             return None
 
-        data1 = parse_data(data1_text)
-        data2 = parse_data(data2_text)
+        data1 = parse_data(line[64:72].strip())
+        data2 = parse_data(line[72:80].strip())
 
         risultati.append({
             "Polizza": polizza,
@@ -88,7 +111,6 @@ def processare_repcommg():
             "Data effetto": data1,
             "Data competenza": data2
         })
-
     return risultati
 
 
@@ -112,14 +134,10 @@ def processare_commgfnz():
 
         polizza_text = line[0:11].strip()
         polizza = int(polizza_text) if polizza_text.isdigit() else polizza_text
-
-        garanzia = line[11:16].strip()
-        if garanzia.startswith("T"):
-            garanzia = garanzia[1:]
-
+        garanzia = line[11:16].strip().lstrip("T")
         fondo = line[16:35].strip()
-
         comm_text = line[35:62].strip()
+
         if comm_text.isdigit():
             commissioni_base = float(comm_text) / 10_000_000
             commissioni = round(commissioni_base * 0.76154, 2)
@@ -128,19 +146,16 @@ def processare_commgfnz():
 
         tipo_op = line[119:121].strip()
 
-        data1_text = line[121:129].strip()
-        data2_text = line[129:137].strip()
-
         def parse_data(txt):
             if len(txt) == 8 and txt.isdigit():
                 try:
                     return datetime(int(txt[:4]), int(txt[4:6]), int(txt[6:8])).date()
                 except:
-                    return None
+                    pass
             return None
 
-        data1 = parse_data(data1_text)
-        data2 = parse_data(data2_text)
+        data1 = parse_data(line[121:129].strip())
+        data2 = parse_data(line[129:137].strip())
 
         risultati.append({
             "Polizza": polizza,
@@ -151,7 +166,6 @@ def processare_commgfnz():
             "Data effetto": data1,
             "Data competenza": data2
         })
-
     return risultati
 
 
@@ -185,19 +199,18 @@ def main():
     if tutti_dati:
         output_file = os.path.join(cartella, "REPCOMMG+COMMGFNZ.xlsx")
         try:
-            with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+            with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+                df_finale = pd.DataFrame(tutti_dati)
                 df_repcommg = pd.DataFrame(dati_repcommg)
                 df_commgfnz = pd.DataFrame(dati_commgfnz)
-                df_finale = pd.DataFrame(tutti_dati)
 
-                df_finale.to_excel(writer, sheet_name='FINALE', index=False)
-                df_repcommg.to_excel(writer, sheet_name='REPCOMMG', index=False)
-                df_commgfnz.to_excel(writer, sheet_name='COMMGFNZ', index=False)
+                df_finale.to_excel(writer, sheet_name="FINALE", index=False)
+                df_repcommg.to_excel(writer, sheet_name="REPCOMMG", index=False)
+                df_commgfnz.to_excel(writer, sheet_name="COMMGFNZ", index=False)
 
-            end_time = time.time()
             print(f"\n✅ File Excel creato: {output_file}")
             print(f"📊 FINALE: {len(tutti_dati)} righe totali")
-            print(f"⏱️  Tempo di esecuzione: {end_time - start_time:.2f}s")
+            print(f"⏱️  Tempo di esecuzione: {time.time() - start_time:.2f}s")
 
         except Exception as e:
             print(f"\n❌ ERRORE durante la creazione dell’Excel: {e}")
