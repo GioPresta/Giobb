@@ -149,6 +149,27 @@ def main():
         print(f"  {idx}. {f}")
     print()
     
+    # ⚠️ AVVISO E CONFERMA UTENTE
+    print("=" * 60)
+    print("⚠️  ATTENZIONE - LEGGERE ATTENTAMENTE")
+    print("=" * 60)
+    print("Nella cartella devono essere presenti SOLO i file da estrarre!")
+    print("Rimuovi eventuali file .txt non necessari prima di procedere.")
+    print()
+    print("I file sopra elencati verranno uniti in 'Riepilogo.txt'")
+    print("=" * 60)
+    print()
+    
+    # Chiedi conferma all'utente
+    risposta = input("Vuoi procedere con l'estrazione? (S/N): ").strip().upper()
+    
+    if risposta != 'S':
+        print("\n❌ Operazione annullata dall'utente.")
+        input("\nPremi INVIO per chiudere...")
+        return
+    
+    print("\n▶️  Avvio estrazione...\n")
+    
     # Elabora tutti i file
     risultato = []
     files_elaborati = 0
