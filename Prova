@@ -1,45 +1,36 @@
 import os
+import sys
+import time
 import pandas as pd
 from datetime import datetime
-import time
-import sys
-from io import StringIO
 
 # ============================
-# CONFIGURAZIONE
+# CONFIGURAZIONE DA COMPLETARE
 # ============================
 
-SEARCH_PATTERN = "GCA_"
-DATE_COLUMNS = ["DTA_RFR", "DTA_NAS_A1", "DTA_DEC", "DTA_SCA", "DATA_SCAD_PREMI"]
-NUMERIC_COLUMNS = ["RIS_MAT", "RIS_MAT_A", "RIS_SPE", "RIS_INT_R", "RIS_AL_1",
-                   "MIN_GAR", "MIN_TRAT", "COM_MANT"]
-COLUMN_INDICES = [i - 1 for i in [
-    2,4,5,9,10,15,18,26,27,52,57,58,59,60,64,66,
-    77,79,80,81,86,90,91,94,112,113,129,130,137
-]]
-COLUMN_HEADERS = ["DTA_RFR","NUM_TST","NUM_PLZ","CDC_TAR","CDC_FND","DTA_NAS_A1","SESSO_A1",
-"DTA_DEC","DTA_SCA","FRZ_PRM","RIP_PRE","RIS_MAT","RIS_MAT_A","RIS_SPE","RIS_INT_R",
-"RIS_AL_1","CDC_CONV","MIN_GAR","MIN_TRAT","COM_MANT","TPO_PRM","RAMO","FRM_TAR","T_TCN",
-"COD_FISC_CONTRAENTE","IND_COLL","DATA_SCAD_PREMI","CDC_PROD","FONDO_UTILI"]
+SEARCH_PATTERN = "GCA_"  # Prefisso del file da cercare
+
+RAW_TITLES = [  # <-- INSERISCI QUI I TITOLI DELLE COLONNE
+]
+
+DATE_COLUMNS = [  # <-- INSERISCI QUI LE COLONNE CON DATE
+]
+
+NUMERIC_COLUMNS = [  # <-- INSERISCI QUI LE COLONNE NUMERICHE
+]
+
+COLUMN_INDICES = [  # <-- INSERISCI QUI GLI INDICI (0-based) DELLE COLONNE DA COPIARE
+]
+
+CHUNK_SIZE = 50000  # Numero di righe lette per volta
+
 
 # ============================
-# FUNZIONI
+# FUNZIONI DI SUPPORTO
 # ============================
-
-def format_time(seconds):
-    return f"{seconds/60:.1f} min" if seconds > 60 else f"{seconds:.1f} s"
-
-def print_progress(current, total, prefix=""):
-    bar_length = 40
-    filled = int(bar_length * current // total)
-    bar = "█" * filled + "░" * (bar_length - filled)
-    percent = (current / total) * 100
-    sys.stdout.write(f"\r{prefix} [{bar}] {percent:5.1f}% ({current}/{total})")
-    sys.stdout.flush()
-    if current == total:
-        print()
 
 def force_date_conversion(date_str):
+    """Converte le date, sostituendo il 9999 con 9998 per compatibilità Excel."""
     if pd.isna(date_str) or not str(date_str).strip():
         return None
     s = str(date_str).strip()
@@ -56,89 +47,109 @@ def force_date_conversion(date_str):
         dt = pd.to_datetime(s, errors="coerce")
         if pd.notna(dt):
             return datetime(9998, dt.month, dt.day) if dt.year == 9999 else dt.to_pydatetime()
-    except Exception:
+    except:
         return None
     return None
+
+
+def append_chunk_to_excel(writer, df, sheet_name):
+    """Scrive un chunk in un foglio Excel, continuando in coda se già esiste."""
+    if sheet_name not in writer.sheets:
+        startrow = 0
+    else:
+        startrow = writer.sheets[sheet_name].dim_rowmax or 0
+    df.to_excel(writer, sheet_name=sheet_name, index=False, header=False, startrow=startrow)
+
 
 # ============================
 # AVVIO PROGRAMMA
 # ============================
 
-print("=== CONVERTITORE TXT → XLSX ===\n")
-print("Ricerca file...")
-
 input_file = next((f for f in os.listdir(".") if f.startswith(SEARCH_PATTERN) and f.endswith(".txt")), None)
 if not input_file:
     print(f"❌ Nessun file trovato che inizia con '{SEARCH_PATTERN}'")
-    input("Premi INVIO per uscire...")
     sys.exit(1)
 
-file_size = os.path.getsize(input_file) / (1024 * 1024)
-print(f"Trovato file: {input_file} ({file_size:.1f} MB)\n")
-
+output_file = f"{os.path.splitext(input_file)[0]}.xlsx"
 start_time = time.time()
 
-# Lettura con fallback encoding
-try:
-    with open(input_file, encoding="utf-8") as f:
-        lines = f.readlines()[1:-1]
-except UnicodeDecodeError:
-    with open(input_file, encoding="latin-1") as f:
-        lines = f.readlines()[1:-1]
+print(f"📂 File trovato: {input_file}")
+print(f"💾 Output: {output_file}")
+print("⏳ Elaborazione in corso...")
 
-lines = [line.rsplit(';', 1)[0] + '\n' for line in lines]
-print(f"Lettura completata: {len(lines)} righe.")
-
-# Parsing progressivo
-print("Parsing in corso...")
-chunk = 50000
-buffer = ""
-for i in range(0, len(lines), chunk):
-    print_progress(i, len(lines), "Caricamento")
-    buffer += "".join(lines[i:i+chunk])
-print_progress(len(lines), len(lines), "Caricamento")
-
-# Lettura con pandas
-t0 = time.time()
-df_raw = pd.read_csv(StringIO(buffer), sep=';', header=None, dtype=str, low_memory=False)
-del buffer
-print(f"Dati caricati in {format_time(time.time() - t0)}: {len(df_raw)} righe, {len(df_raw.columns)} colonne.\n")
-
-# Estrazione subset
-df_subset = df_raw.iloc[:, COLUMN_INDICES].copy()
-df_subset.columns = COLUMN_HEADERS[:len(df_subset.columns)]
-
-# Check colonne mancanti
-missing = [h for h in COLUMN_HEADERS if h not in df_subset.columns]
-if missing:
-    print(f"⚠️ Attenzione: colonne mancanti nel file: {', '.join(missing)}")
-
-# Conversione date
-print("\nConversione colonne data...")
-for col in [c for c in DATE_COLUMNS if c in df_subset.columns]:
-    df_subset[col] = df_subset[col].apply(force_date_conversion)
-
-# Conversione numeriche
-print("Conversione colonne numeriche...")
-for col in [c for c in NUMERIC_COLUMNS if c in df_subset.columns]:
-    df_subset[col] = pd.to_numeric(df_subset[col].str.replace(",", "."), errors="coerce")
-
-# Scrittura Excel
-output_file = f"{os.path.splitext(input_file)[0]}.xlsx"
-try:
-    if os.path.exists(output_file):
-        os.rename(output_file, output_file)
-except PermissionError:
-    print(f"❌ Il file '{output_file}' è aperto in Excel. Chiudilo e riesegui.")
-    input("Premi INVIO per uscire...")
-    sys.exit(1)
-
-print(f"\nScrittura file Excel '{output_file}'...")
 with pd.ExcelWriter(output_file, engine="xlsxwriter", date_format="dd/mm/yyyy") as writer:
-    df_subset.to_excel(writer, sheet_name="DA_COPIARE", index=False)
-    df_raw.to_excel(writer, sheet_name="Originale", index=False)
-print("✅ Esportazione completata.\n")
+    workbook = writer.book
+    date_fmt = workbook.add_format({'num_format': 'dd/mm/yyyy'})
+    num_fmt = workbook.add_format({'num_format': '0.00'})
 
-print(f"Tempo totale: {format_time(time.time() - start_time)}")
-print(f"Righe totali: {len(df_raw)}  |  Colonne: {len(df_raw.columns)}\n")
-input("Operazione terminata! Premi INVIO per uscire...")
+    for chunk in pd.read_csv(input_file, sep=';', header=None, dtype=str, chunksize=CHUNK_SIZE, low_memory=False):
+        # Aggiusta titoli
+        while len(RAW_TITLES) < len(chunk.columns):
+            RAW_TITLES.append(f"Campo_Extra_{len(RAW_TITLES)+1}")
+        chunk.columns = RAW_TITLES[:len(chunk.columns)]
+
+        # ====================
+        # 🔹 Conversioni
+        # ====================
+        for col in [c for c in DATE_COLUMNS if c in chunk.columns]:
+            chunk[col] = chunk[col].apply(force_date_conversion)
+        for col in [c for c in NUMERIC_COLUMNS if c in chunk.columns]:
+            chunk[col] = pd.to_numeric(chunk[col].str.replace(",", "."), errors="coerce")
+
+        # ====================
+        # 🔹 Foglio "Originale"
+        # ====================
+        if 'Originale' not in writer.sheets:
+            # Scrivi header e seconda riga con ColumnX
+            header_df = pd.DataFrame([RAW_TITLES[:len(chunk.columns)],
+                                      [f"Column{i+1}" for i in range(len(chunk.columns))]])
+            header_df.to_excel(writer, sheet_name='Originale', index=False, header=False)
+            startrow = 2
+        else:
+            startrow = writer.sheets['Originale'].dim_rowmax or 0
+
+        chunk.to_excel(writer, sheet_name='Originale', index=False, header=False, startrow=startrow)
+
+        # ====================
+        # 🔹 Foglio "DA_COPIARE"
+        # ====================
+        subset = chunk.iloc[:, COLUMN_INDICES].copy()
+
+        if 'DA_COPIARE' not in writer.sheets:
+            # Scrivi header + ColumnX
+            headers = [RAW_TITLES[i] for i in COLUMN_INDICES]
+            cols_row = [f"Column{i+1}" for i in range(len(COLUMN_INDICES))]
+            header_df = pd.DataFrame([headers, cols_row])
+            header_df.to_excel(writer, sheet_name='DA_COPIARE', index=False, header=False)
+            startrow_copy = 2
+        else:
+            startrow_copy = writer.sheets['DA_COPIARE'].dim_rowmax or 0
+
+        subset.to_excel(writer, sheet_name='DA_COPIARE', index=False, header=False, startrow=startrow_copy)
+
+    # ====================
+    # 🔹 Formattazione Excel
+    # ====================
+    ws_orig = writer.sheets['Originale']
+    ws_copy = writer.sheets['DA_COPIARE']
+
+    for col_idx, col_name in enumerate(RAW_TITLES):
+        if col_name in DATE_COLUMNS:
+            ws_orig.set_column(col_idx, col_idx, 12, date_fmt)
+        elif col_name in NUMERIC_COLUMNS:
+            ws_orig.set_column(col_idx, col_idx, 12, num_fmt)
+
+    for idx in COLUMN_INDICES:
+        col_name = RAW_TITLES[idx]
+        if col_name in DATE_COLUMNS:
+            ws_copy.set_column(idx, idx, 12, date_fmt)
+        elif col_name in NUMERIC_COLUMNS:
+            ws_copy.set_column(idx, idx, 12, num_fmt)
+
+# ============================
+# FINE
+# ============================
+
+elapsed = time.time() - start_time
+print(f"✅ Completato in {elapsed:.1f} secondi")
+print(f"📘 File creato: {output_file}")
