@@ -6,11 +6,13 @@ import sys
 from io import StringIO
 
 # ============================
-# CONFIGURAZIONE PRINCIPALE
+# CONFIGURAZIONE
 # ============================
 
 SEARCH_PATTERN = "GCA_"
 DATE_COLUMNS = ["DTA_RFR", "DTA_NAS_A1", "DTA_DEC", "DTA_SCA", "DATA_SCAD_PREMI"]
+NUMERIC_COLUMNS = ["RIS_MAT", "RIS_MAT_A", "RIS_SPE", "RIS_INT_R", "RIS_AL_1",
+                   "MIN_GAR", "MIN_TRAT", "COM_MANT"]
 COLUMN_INDICES = [i - 1 for i in [
     2,4,5,9,10,15,18,26,27,52,57,58,59,60,64,66,
     77,79,80,81,86,90,91,94,112,113,129,130,137
@@ -20,21 +22,17 @@ COLUMN_HEADERS = ["DTA_RFR","NUM_TST","NUM_PLZ","CDC_TAR","CDC_FND","DTA_NAS_A1"
 "RIS_AL_1","CDC_CONV","MIN_GAR","MIN_TRAT","COM_MANT","TPO_PRM","RAMO","FRM_TAR","T_TCN",
 "COD_FISC_CONTRAENTE","IND_COLL","DATA_SCAD_PREMI","CDC_PROD","FONDO_UTILI"]
 
-
 # ============================
-# FUNZIONI DI SUPPORTO
+# FUNZIONI
 # ============================
 
 def format_time(seconds):
-    if seconds < 60:
-        return f"{seconds:.1f} s"
-    else:
-        return f"{seconds/60:.1f} min"
+    return f"{seconds/60:.1f} min" if seconds > 60 else f"{seconds:.1f} s"
 
 def print_progress(current, total, prefix=""):
     bar_length = 40
-    filled_length = int(bar_length * current // total)
-    bar = "█" * filled_length + "░" * (bar_length - filled_length)
+    filled = int(bar_length * current // total)
+    bar = "█" * filled + "░" * (bar_length - filled)
     percent = (current / total) * 100
     sys.stdout.write(f"\r{prefix} [{bar}] {percent:5.1f}% ({current}/{total})")
     sys.stdout.flush()
@@ -44,45 +42,43 @@ def print_progress(current, total, prefix=""):
 def force_date_conversion(date_str):
     if pd.isna(date_str) or not str(date_str).strip():
         return None
-    date_str = str(date_str).strip()
+    s = str(date_str).strip()
     try:
-        if "9999" in date_str:
+        if "9999" in s:
             return datetime(9998, 12, 31)
-        if "/" in date_str:
-            parts = date_str.split("/")
-            if len(parts[0]) == 4:  # yyyy/mm/dd
+        if "/" in s:
+            parts = s.split("/")
+            if len(parts[0]) == 4:
                 y, m, d = map(int, parts)
             else:
                 d, m, y = map(int, parts)
             return datetime(y, m, d)
-        dt = pd.to_datetime(date_str, errors="coerce")
+        dt = pd.to_datetime(s, errors="coerce")
         if pd.notna(dt):
-            if dt.year == 9999:
-                dt = datetime(9998, dt.month, dt.day)
-            return dt.to_pydatetime()
+            return datetime(9998, dt.month, dt.day) if dt.year == 9999 else dt.to_pydatetime()
     except Exception:
         return None
     return None
-
 
 # ============================
 # AVVIO PROGRAMMA
 # ============================
 
-print("=== CONVERTITORE TXT → XLSX ===")
+print("=== CONVERTITORE TXT → XLSX ===\n")
 print("Ricerca file...")
 
 input_file = next((f for f in os.listdir(".") if f.startswith(SEARCH_PATTERN) and f.endswith(".txt")), None)
-if input_file is None:
+if not input_file:
     print(f"❌ Nessun file trovato che inizia con '{SEARCH_PATTERN}'")
     input("Premi INVIO per uscire...")
     sys.exit(1)
 
-file_size_mb = os.path.getsize(input_file) / (1024 * 1024)
-print(f"Trovato file: {input_file} ({file_size_mb:.1f} MB)\n")
+file_size = os.path.getsize(input_file) / (1024 * 1024)
+print(f"Trovato file: {input_file} ({file_size:.1f} MB)\n")
+
 start_time = time.time()
 
-# Tentativo lettura file
+# Lettura con fallback encoding
 try:
     with open(input_file, encoding="utf-8") as f:
         lines = f.readlines()[1:-1]
@@ -90,63 +86,59 @@ except UnicodeDecodeError:
     with open(input_file, encoding="latin-1") as f:
         lines = f.readlines()[1:-1]
 
-# Rimuove eventuale ';' finale per compatibilità CSV
 lines = [line.rsplit(';', 1)[0] + '\n' for line in lines]
 print(f"Lettura completata: {len(lines)} righe.")
 
 # Parsing progressivo
 print("Parsing in corso...")
-read_start = time.time()
-total_lines = len(lines)
-buffer = ""
 chunk = 50000
-for i in range(0, total_lines, chunk):
-    print_progress(i, total_lines, "Caricamento")
+buffer = ""
+for i in range(0, len(lines), chunk):
+    print_progress(i, len(lines), "Caricamento")
     buffer += "".join(lines[i:i+chunk])
-print_progress(total_lines, total_lines, "Caricamento")
-print(f"Tempo lettura: {format_time(time.time() - read_start)}\n")
+print_progress(len(lines), len(lines), "Caricamento")
 
 # Lettura con pandas
+t0 = time.time()
 df_raw = pd.read_csv(StringIO(buffer), sep=';', header=None, dtype=str, low_memory=False)
 del buffer
-print(f"Dati caricati: {len(df_raw)} righe, {len(df_raw.columns)} colonne\n")
+print(f"Dati caricati in {format_time(time.time() - t0)}: {len(df_raw)} righe, {len(df_raw.columns)} colonne.\n")
 
-# Conversione colonne data nel RAW
-for col in DATE_COLUMNS:
-    if col in df_raw.columns:
-        idx = df_raw.columns.get_loc(col)
-        print(f"→ Conversione date: {col}")
-        df_raw.iloc[:, idx] = df_raw.iloc[:, idx].apply(force_date_conversion)
-
-# Estrazione colonne richieste
+# Estrazione subset
 df_subset = df_raw.iloc[:, COLUMN_INDICES].copy()
 df_subset.columns = COLUMN_HEADERS[:len(df_subset.columns)]
 
-# Creazione file Excel
-output_file = f"{os.path.splitext(input_file)[0]}.xlsx"
+# Check colonne mancanti
+missing = [h for h in COLUMN_HEADERS if h not in df_subset.columns]
+if missing:
+    print(f"⚠️ Attenzione: colonne mancanti nel file: {', '.join(missing)}")
 
-# Controlla se è aperto
+# Conversione date
+print("\nConversione colonne data...")
+for col in [c for c in DATE_COLUMNS if c in df_subset.columns]:
+    df_subset[col] = df_subset[col].apply(force_date_conversion)
+
+# Conversione numeriche
+print("Conversione colonne numeriche...")
+for col in [c for c in NUMERIC_COLUMNS if c in df_subset.columns]:
+    df_subset[col] = pd.to_numeric(df_subset[col].str.replace(",", "."), errors="coerce")
+
+# Scrittura Excel
+output_file = f"{os.path.splitext(input_file)[0]}.xlsx"
 try:
     if os.path.exists(output_file):
-        os.rename(output_file, output_file)  # se fallisce → file aperto
+        os.rename(output_file, output_file)
 except PermissionError:
     print(f"❌ Il file '{output_file}' è aperto in Excel. Chiudilo e riesegui.")
     input("Premi INVIO per uscire...")
     sys.exit(1)
 
-print(f"Creazione Excel: {output_file}")
-write_start = time.time()
-
+print(f"\nScrittura file Excel '{output_file}'...")
 with pd.ExcelWriter(output_file, engine="xlsxwriter", date_format="dd/mm/yyyy") as writer:
-    total_steps = 2
     df_subset.to_excel(writer, sheet_name="DA_COPIARE", index=False)
-    print_progress(1, total_steps, "Scrittura fogli")
     df_raw.to_excel(writer, sheet_name="Originale", index=False)
-    print_progress(2, total_steps, "Scrittura fogli")
+print("✅ Esportazione completata.\n")
 
-print(f"✅ File Excel creato: {output_file}")
-elapsed = time.time() - start_time
-print(f"Tempo totale: {format_time(elapsed)}")
-print(f"Righe totali: {len(df_raw)} ({len(df_raw.columns)} colonne)\n")
-
-input("Operazione completata! Premi INVIO per uscire...")
+print(f"Tempo totale: {format_time(time.time() - start_time)}")
+print(f"Righe totali: {len(df_raw)}  |  Colonne: {len(df_raw.columns)}\n")
+input("Operazione terminata! Premi INVIO per uscire...")
