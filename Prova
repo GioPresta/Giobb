@@ -1,5 +1,5 @@
 import pandas as pd
-from datetime import import datetime
+from datetime import datetime
 import glob
 import time
 import sys
@@ -9,27 +9,41 @@ import os
 def get_working_directory():
     """Restituisce la cartella di lavoro corretta per script o exe"""
     if getattr(sys, 'frozen', False):
-        # Se è compilato con PyInstaller
         return os.path.dirname(sys.executable)
     else:
-        # Se è uno script Python normale
         return os.path.dirname(os.path.abspath(__file__))
+
+
+def trova_file(base_name):
+    """
+    Cerca un file che contiene il nome base (es. REPCOMMG o COMMGFNZ)
+    nella cartella di lavoro, ignorando eventuali numeri o prefissi/suffissi.
+    """
+    cartella = get_working_directory()
+    pattern = os.path.join(cartella, f"*{base_name}*.TXT")
+    files_trovati = glob.glob(pattern, recursive=False)
+
+    if not files_trovati:
+        print(f"⚠️  ATTENZIONE: Nessun file trovato che contenga '{base_name}'")
+        return None
+
+    # Se ci sono più file, prende quello più recente (per data di modifica)
+    file_scelto = max(files_trovati, key=os.path.getmtime)
+    print(f"📄 Trovato file per '{base_name}': {os.path.basename(file_scelto)}")
+    return file_scelto
 
 
 def processare_repcommg():
     """Processa il file REPCOMMG.TXT"""
-    cartella = get_working_directory()
-    file_path = os.path.join(cartella, "REPCOMMG.TXT")
-    
-    if not os.path.exists(file_path):
-        print(f"⚠️  ATTENZIONE: File {file_path} non trovato!")
+    file_path = trova_file("REPCOMMG")
+    if not file_path:
         return []
-    
+
     try:
         with open(file_path, "r", encoding="utf-8") as file:
             lines = file.readlines()
     except Exception as e:
-        print(f"❌ Errore lettura REPCOMMG.TXT: {e}")
+        print(f"❌ Errore lettura {file_path}: {e}")
         return []
 
     risultati = []
@@ -54,20 +68,16 @@ def processare_repcommg():
         data1_text = line[64:72].strip()
         data2_text = line[72:80].strip()
 
-        data1 = None
-        data2 = None
+        def parse_data(txt):
+            if len(txt) == 8 and txt.isdigit():
+                try:
+                    return datetime(int(txt[:4]), int(txt[4:6]), int(txt[6:8])).date()
+                except:
+                    return None
+            return None
 
-        if len(data1_text) == 8 and data1_text.isdigit():
-            try:
-                data1 = datetime(int(data1_text[0:4]), int(data1_text[4:6]), int(data1_text[6:8])).date()
-            except:
-                pass
-
-        if len(data2_text) == 8 and data2_text.isdigit():
-            try:
-                data2 = datetime(int(data2_text[0:4]), int(data2_text[4:6]), int(data2_text[6:8])).date()
-            except:
-                pass
+        data1 = parse_data(data1_text)
+        data2 = parse_data(data2_text)
 
         risultati.append({
             "Polizza": polizza,
@@ -84,18 +94,15 @@ def processare_repcommg():
 
 def processare_commgfnz():
     """Processa il file COMMGFNZ.TXT"""
-    cartella = get_working_directory()
-    file_path = os.path.join(cartella, "COMMGFNZ.TXT")
-    
-    if not os.path.exists(file_path):
-        print(f"⚠️  ATTENZIONE: File {file_path} non trovato!")
+    file_path = trova_file("COMMGFNZ")
+    if not file_path:
         return []
-    
+
     try:
         with open(file_path, "r", encoding="utf-8") as file:
             lines = file.readlines()
     except Exception as e:
-        print(f"❌ Errore lettura COMMGFNZ.TXT: {e}")
+        print(f"❌ Errore lettura {file_path}: {e}")
         return []
 
     risultati = []
@@ -124,20 +131,16 @@ def processare_commgfnz():
         data1_text = line[121:129].strip()
         data2_text = line[129:137].strip()
 
-        data1 = None
-        data2 = None
+        def parse_data(txt):
+            if len(txt) == 8 and txt.isdigit():
+                try:
+                    return datetime(int(txt[:4]), int(txt[4:6]), int(txt[6:8])).date()
+                except:
+                    return None
+            return None
 
-        if len(data1_text) == 8 and data1_text.isdigit():
-            try:
-                data1 = datetime(int(data1_text[0:4]), int(data1_text[4:6]), int(data1_text[6:8])).date()
-            except:
-                pass
-
-        if len(data2_text) == 8 and data2_text.isdigit():
-            try:
-                data2 = datetime(int(data2_text[0:4]), int(data2_text[4:6]), int(data2_text[6:8])).date()
-            except:
-                pass
+        data1 = parse_data(data1_text)
+        data2 = parse_data(data2_text)
 
         risultati.append({
             "Polizza": polizza,
@@ -160,94 +163,46 @@ def main():
     print("PROCESSAMENTO FILE REPCOMMG E COMMGFNZ")
     print("=" * 70)
     
-    # Determina la cartella di lavoro
     cartella = get_working_directory()
     if getattr(sys, 'frozen', False):
         print("Modalità: EXE compilato")
     else:
         print("Modalità: Script Python")
     
-    print(f"Cartella di lavoro: {cartella}")
-    print()
+    print(f"Cartella di lavoro: {cartella}\n")
 
-    # Processa i file
-    print("Processando REPCOMMG.TXT...")
+    print("Processando REPCOMMG...")
     dati_repcommg = processare_repcommg()
     print(f"✓ REPCOMMG: {len(dati_repcommg)} righe processate")
 
-    print("\nProcessando COMMGFNZ.TXT...")
+    print("\nProcessando COMMGFNZ...")
     dati_commgfnz = processare_commgfnz()
     print(f"✓ COMMGFNZ: {len(dati_commgfnz)} righe processate")
 
-    # Unisci i dati
     print("\nUnendo tutti i dati...")
     tutti_dati = dati_repcommg + dati_commgfnz
 
     if tutti_dati:
         output_file = os.path.join(cartella, "REPCOMMG+COMMGFNZ.xlsx")
-        
         try:
             with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
                 df_repcommg = pd.DataFrame(dati_repcommg)
                 df_commgfnz = pd.DataFrame(dati_commgfnz)
                 df_finale = pd.DataFrame(tutti_dati)
 
-                # Scrivi i fogli
                 df_finale.to_excel(writer, sheet_name='FINALE', index=False)
                 df_repcommg.to_excel(writer, sheet_name='REPCOMMG', index=False)
                 df_commgfnz.to_excel(writer, sheet_name='COMMGFNZ', index=False)
 
-                # Formatta i fogli
-                for sheet_name in ['FINALE', 'REPCOMMG', 'COMMGFNZ']:
-                    worksheet = writer.sheets[sheet_name]
-
-                    if sheet_name == 'FINALE':
-                        num_rows = len(df_finale)
-                    elif sheet_name == 'REPCOMMG':
-                        num_rows = len(df_repcommg)
-                    else:
-                        num_rows = len(df_commgfnz)
-
-                    num_cols = len(df_finale.columns) if sheet_name == 'FINALE' else (
-                        len(df_repcommg.columns) if sheet_name == 'REPCOMMG' else len(df_commgfnz.columns)
-                    )
-
-                    for col_num in range(num_cols):
-                        col_letter = chr(65 + col_num)
-
-                        # Formatta Polizza
-                        if col_num == 0:
-                            for row in range(2, num_rows + 2):
-                                worksheet[f"{col_letter}{row}"].number_format = '0'
-
-                        # Formatta Commissioni
-                        elif col_num == 3:
-                            for row in range(2, num_rows + 2):
-                                if sheet_name == 'COMMGFNZ' or (sheet_name == 'FINALE' and row > len(df_repcommg) + 1):
-                                    worksheet[f"{col_letter}{row}"].number_format = '0.00'
-                                else:
-                                    worksheet[f"{col_letter}{row}"].number_format = '0.00000000'
-
-                        # Formatta Date
-                        elif col_num >= 5:
-                            for row in range(2, num_rows + 2):
-                                worksheet[f"{col_letter}{row}"].number_format = 'dd/mm/yyyy'
-
             end_time = time.time()
-            execution_time = end_time - start_time
-
-            print(f"\n✅ File Excel creato: REPCOMMG+COMMGFNZ.xlsx")
-            print(f"📊 - Foglio FINALE: {len(tutti_dati)} righe totali")
-            print(f"📊 - Foglio REPCOMMG: {len(dati_repcommg)} righe")
-            print(f"📊 - Foglio COMMGFNZ: {len(dati_commgfnz)} righe")
-            print(f"⏱️  Tempo di esecuzione: {execution_time:.2f} secondi")
-            print(f"\n📁 Percorso completo: {output_file}")
+            print(f"\n✅ File Excel creato: {output_file}")
+            print(f"📊 FINALE: {len(tutti_dati)} righe totali")
+            print(f"⏱️  Tempo di esecuzione: {end_time - start_time:.2f}s")
 
         except Exception as e:
-            print(f"\n❌ ERRORE durante la creazione del file Excel: {e}")
+            print(f"\n❌ ERRORE durante la creazione dell’Excel: {e}")
             import traceback
             traceback.print_exc()
-
     else:
         print("\n❌ Nessun dato trovato")
 
