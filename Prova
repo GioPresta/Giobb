@@ -1,8 +1,210 @@
-Durata del tirocinio: dal 03/07/2025 al 30/12/2025
+import os
+import sys
 
-Periodo di tirocinio:
-(l’orario max settimanale è di 40 ore –
-verificare tabella)
-n° mesi (MAX 6): 5 n° settimane: 25
-n° giorni a settimana: 5 n° giorni solari: 181
-n° giorni lavorativi: 129 n° ore totali: 37:00
+# Liste di header da gestire
+HEADER_LINES_TO_DELETE = [
+    "LIVELLO",
+    "ID",
+    "OPERAZIONE"
+]
+
+HEADERS_TO_DEDUPLICATE = [
+    "GRAVITA'",
+    "ADESIONE",
+    "ERRORE"
+]
+
+
+def estrai_blocco_dati(filepath):
+    """Estrae un blocco di dati dal file, saltando le righe di header specificate"""
+    try:
+        with open(filepath, 'r', encoding='latin-1') as f:
+            righe = f.readlines()
+    except Exception as e:
+        print(f"Errore lettura file {filepath}: {e}")
+        return []
+
+    blocco = []
+    i = 0
+
+    # Salta le righe fino a trovare 'LIVELLO'
+    while i < len(righe) and 'LIVELLO' not in righe[i]:
+        i += 1
+
+    # Se siamo alla fine del file, ritorna vuoto
+    if i >= len(righe):
+        return []
+
+    # Estendi il blocco con le prossime 6 righe (header + separatore)
+    blocco.extend(righe[i:i+6])
+    i += 6
+
+    # Continua a processare le righe successive
+    while i < len(righe):
+        riga = righe[i].strip()
+        
+        # Se la riga inizia con '*', break
+        if riga.startswith('*'):
+            break
+        
+        # Se la riga non è vuota o composta solo da spazi/trattini
+        if not set(riga).issubset(set('- ')):
+            blocco.append(righe[i])
+        
+        i += 1
+
+    return blocco
+
+
+def pulisci_output(path_file):
+    """Pulisce l'output rimuovendo duplicati e righe indesiderate"""
+    try:
+        with open(path_file, 'r', encoding='latin-1') as f:
+            righe = f.readlines()
+    except Exception as e:
+        print(f"Errore lettura file output: {e}")
+        return
+
+    pulite = []
+    intestazioni_trovate = set()
+
+    for riga in righe:
+        testo = riga.strip()
+
+        # Salta righe vuote
+        if not testo:
+            continue
+
+        # Salta righe che iniziano con '*'
+        if testo.startswith('*'):
+            continue
+
+        # Salta righe composte solo da spazi e trattini
+        if set(testo).issubset(set('- ')):
+            continue
+
+        # Gestione header da eliminare
+        if any(testo.startswith(prefix) for prefix in HEADER_LINES_TO_DELETE):
+            continue
+
+        # Gestione header da de-duplicare
+        if any(testo.startswith(h) for h in HEADERS_TO_DEDUPLICATE):
+            header = next(h for h in HEADERS_TO_DEDUPLICATE if testo.startswith(h))
+            if header in intestazioni_trovate:
+                continue
+            intestazioni_trovate.add(header)
+
+        pulite.append(riga)
+
+    # Scrivi il file pulito
+    try:
+        with open(path_file, 'w', encoding='latin-1') as f:
+            f.writelines(pulite)
+        print(f"File pulito con successo: {len(pulite)} righe")
+    except Exception as e:
+        print(f"Errore scrittura file output: {e}")
+
+
+def main():
+    """Funzione principale"""
+    print("=" * 60)
+    print("MERGE TXT FILES - Avvio programma")
+    print("=" * 60)
+    
+    # Determina la cartella di lavoro
+    if getattr(sys, 'frozen', False):
+        # Se è compilato con PyInstaller
+        cartella = os.path.dirname(sys.executable)
+        print("Modalità: EXE compilato")
+    else:
+        # Se è uno script Python normale
+        cartella = os.path.dirname(os.path.abspath(__file__))
+        print("Modalità: Script Python")
+    
+    print(f"Cartella di lavoro: {cartella}")
+    print()
+    
+    nome_output = 'Riepilogo.txt'
+    percorso_output = os.path.join(cartella, nome_output)
+    
+    # Trova tutti i file .txt nella cartella (escluso l'output)
+    try:
+        tutti_files = os.listdir(cartella)
+        files_txt = sorted([
+            f for f in tutti_files
+            if f.endswith('.txt') and f != nome_output
+        ])
+    except Exception as e:
+        print(f"❌ ERRORE: Impossibile leggere la cartella: {e}")
+        input("\nPremi INVIO per chiudere...")
+        return
+    
+    if not files_txt:
+        print("❌ Nessun file .txt trovato nella cartella!")
+        input("\nPremi INVIO per chiudere...")
+        return
+    
+    print(f"📁 File .txt trovati: {len(files_txt)}")
+    for idx, f in enumerate(files_txt, 1):
+        print(f"  {idx}. {f}")
+    print()
+    
+    # Elabora tutti i file
+    risultato = []
+    files_elaborati = 0
+    
+    for file in files_txt:
+        file_path = os.path.join(cartella, file)
+        print(f"⚙️  Elaboro: {file}...", end=" ")
+        
+        try:
+            blocco = estrai_blocco_dati(file_path)
+            if blocco:
+                risultato.extend(blocco)
+                risultato.append('\n')
+                files_elaborati += 1
+                print("✓")
+            else:
+                print("(vuoto)")
+        except Exception as e:
+            print(f"✗ Errore: {e}")
+    
+    print()
+    print(f"Files elaborati: {files_elaborati}/{len(files_txt)}")
+    
+    # Salva il risultato
+    if not risultato:
+        print("❌ Nessun dato da salvare!")
+        input("\nPremi INVIO per chiudere...")
+        return
+    
+    print(f"\n💾 Salvataggio in: {percorso_output}")
+    try:
+        with open(percorso_output, 'w', encoding='latin-1') as f:
+            f.writelines(risultato)
+        print(f"✓ File creato: {os.path.getsize(percorso_output)} bytes")
+    except Exception as e:
+        print(f"❌ ERRORE durante il salvataggio: {e}")
+        input("\nPremi INVIO per chiudere...")
+        return
+    
+    # Pulisci l'output
+    print("\n🧹 Pulizia file output...")
+    pulisci_output(percorso_output)
+    
+    # Verifica finale
+    if os.path.exists(percorso_output):
+        dimensione = os.path.getsize(percorso_output)
+        print(f"\n✅ COMPLETATO!")
+        print(f"   File: {nome_output}")
+        print(f"   Dimensione: {dimensione} bytes")
+        print(f"   Percorso: {percorso_output}")
+    else:
+        print("\n❌ ERRORE: File non trovato dopo la creazione!")
+    
+    print("\n" + "=" * 60)
+    input("\nPremi INVIO per chiudere...")
+
+
+if __name__ == "__main__":
+    main()
