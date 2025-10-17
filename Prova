@@ -1,227 +1,152 @@
+import os
 import pandas as pd
 from datetime import datetime
-import glob
 import time
 import sys
-import os
+from io import StringIO
+
+# ============================
+# CONFIGURAZIONE PRINCIPALE
+# ============================
+
+SEARCH_PATTERN = "GCA_"
+DATE_COLUMNS = ["DTA_RFR", "DTA_NAS_A1", "DTA_DEC", "DTA_SCA", "DATA_SCAD_PREMI"]
+COLUMN_INDICES = [i - 1 for i in [
+    2,4,5,9,10,15,18,26,27,52,57,58,59,60,64,66,
+    77,79,80,81,86,90,91,94,112,113,129,130,137
+]]
+COLUMN_HEADERS = ["DTA_RFR","NUM_TST","NUM_PLZ","CDC_TAR","CDC_FND","DTA_NAS_A1","SESSO_A1",
+"DTA_DEC","DTA_SCA","FRZ_PRM","RIP_PRE","RIS_MAT","RIS_MAT_A","RIS_SPE","RIS_INT_R",
+"RIS_AL_1","CDC_CONV","MIN_GAR","MIN_TRAT","COM_MANT","TPO_PRM","RAMO","FRM_TAR","T_TCN",
+"COD_FISC_CONTRAENTE","IND_COLL","DATA_SCAD_PREMI","CDC_PROD","FONDO_UTILI"]
 
 
-def get_working_directory():
-    """Restituisce la cartella di lavoro corretta per script o exe"""
-    if getattr(sys, 'frozen', False):
-        return os.path.dirname(sys.executable)
+# ============================
+# FUNZIONI DI SUPPORTO
+# ============================
+
+def format_time(seconds):
+    if seconds < 60:
+        return f"{seconds:.1f} s"
     else:
-        return os.path.dirname(os.path.abspath(__file__))
+        return f"{seconds/60:.1f} min"
 
+def print_progress(current, total, prefix=""):
+    bar_length = 40
+    filled_length = int(bar_length * current // total)
+    bar = "█" * filled_length + "░" * (bar_length - filled_length)
+    percent = (current / total) * 100
+    sys.stdout.write(f"\r{prefix} [{bar}] {percent:5.1f}% ({current}/{total})")
+    sys.stdout.flush()
+    if current == total:
+        print()
 
-def chiedi_conferma(percorso_file, tipo):
-    """
-    Mostra il file trovato e chiede conferma all'utente (S/N).
-    Se l'utente risponde N, ritorna False.
-    """
-    print(f"\n📄 File trovato per '{tipo}':")
-    print(f"   👉 {os.path.basename(percorso_file)}")
-    print(f"   📁 Percorso completo: {percorso_file}")
-    risposta = input(f"Vuoi usare questo file per '{tipo}'? (S/N): ").strip().upper()
-    return risposta == "S"
-
-
-def trova_file(base_name):
-    """
-    Cerca un file che contiene il nome base (es. REPCOMMG o COMMGFNZ)
-    nella cartella di lavoro, ignorando eventuali numeri o suffissi.
-    """
-    cartella = get_working_directory()
-    pattern = os.path.join(cartella, f"*{base_name}*.TXT")
-    files_trovati = glob.glob(pattern, recursive=False)
-
-    if not files_trovati:
-        print(f"⚠️  ATTENZIONE: Nessun file trovato che contenga '{base_name}'")
+def force_date_conversion(date_str):
+    if pd.isna(date_str) or not str(date_str).strip():
         return None
-
-    # Ordina per data di modifica (dal più recente)
-    files_trovati.sort(key=os.path.getmtime, reverse=True)
-
-    # Mostra tutti i file trovati
-    print(f"\n📂 File trovati per '{base_name}':")
-    for i, f in enumerate(files_trovati, 1):
-        data_mod = time.strftime("%d/%m/%Y %H:%M:%S", time.localtime(os.path.getmtime(f)))
-        print(f" {i}. {os.path.basename(f)}  (modificato il {data_mod})")
-
-    # Prende il più recente come predefinito e chiede conferma
-    file_scelto = files_trovati[0]
-    if chiedi_conferma(file_scelto, base_name):
-        return file_scelto
-    else:
-        # Se l’utente dice N, permette di scegliere un altro file
-        while True:
-            scelta = input("Inserisci il numero del file che vuoi usare oppure premi INVIO per annullare: ").strip()
-            if scelta == "":
-                print("❌ Operazione annullata.")
-                return None
-            if scelta.isdigit() and 1 <= int(scelta) <= len(files_trovati):
-                return files_trovati[int(scelta) - 1]
+    date_str = str(date_str).strip()
+    try:
+        if "9999" in date_str:
+            return datetime(9998, 12, 31)
+        if "/" in date_str:
+            parts = date_str.split("/")
+            if len(parts[0]) == 4:  # yyyy/mm/dd
+                y, m, d = map(int, parts)
             else:
-                print("⚠️ Scelta non valida. Riprova.")
+                d, m, y = map(int, parts)
+            return datetime(y, m, d)
+        dt = pd.to_datetime(date_str, errors="coerce")
+        if pd.notna(dt):
+            if dt.year == 9999:
+                dt = datetime(9998, dt.month, dt.day)
+            return dt.to_pydatetime()
+    except Exception:
+        return None
+    return None
 
 
-def processare_repcommg():
-    """Processa il file REPCOMMG.TXT"""
-    file_path = trova_file("REPCOMMG")
-    if not file_path:
-        return []
+# ============================
+# AVVIO PROGRAMMA
+# ============================
 
-    try:
-        with open(file_path, "r", encoding="utf-8") as file:
-            lines = file.readlines()
-    except Exception as e:
-        print(f"❌ Errore lettura {file_path}: {e}")
-        return []
+print("=== CONVERTITORE TXT → XLSX ===")
+print("Ricerca file...")
 
-    risultati = []
-    for line in lines:
-        if len(line) < 80 or "SD" in line:
-            continue
+input_file = next((f for f in os.listdir(".") if f.startswith(SEARCH_PATTERN) and f.endswith(".txt")), None)
+if input_file is None:
+    print(f"❌ Nessun file trovato che inizia con '{SEARCH_PATTERN}'")
+    input("Premi INVIO per uscire...")
+    sys.exit(1)
 
-        polizza_text = line[0:11].strip()
-        polizza = int(polizza_text) if polizza_text.isdigit() else polizza_text
-        garanzia = line[11:16].strip().lstrip("T")
-        fondo = line[16:35].strip()
-        comm_text = line[35:62].strip()
-        commissioni = float(comm_text) / 10_000_000 if comm_text.isdigit() else 0.0
-        tipo_op = line[62:64].strip()
+file_size_mb = os.path.getsize(input_file) / (1024 * 1024)
+print(f"Trovato file: {input_file} ({file_size_mb:.1f} MB)\n")
+start_time = time.time()
 
-        def parse_data(txt):
-            if len(txt) == 8 and txt.isdigit():
-                try:
-                    return datetime(int(txt[:4]), int(txt[4:6]), int(txt[6:8])).date()
-                except:
-                    pass
-            return None
+# Tentativo lettura file
+try:
+    with open(input_file, encoding="utf-8") as f:
+        lines = f.readlines()[1:-1]
+except UnicodeDecodeError:
+    with open(input_file, encoding="latin-1") as f:
+        lines = f.readlines()[1:-1]
 
-        data1 = parse_data(line[64:72].strip())
-        data2 = parse_data(line[72:80].strip())
+# Rimuove eventuale ';' finale per compatibilità CSV
+lines = [line.rsplit(';', 1)[0] + '\n' for line in lines]
+print(f"Lettura completata: {len(lines)} righe.")
 
-        risultati.append({
-            "Polizza": polizza,
-            "Garanzia": garanzia,
-            "Fondo": fondo,
-            "Commissioni": commissioni,
-            "Tipo Operazione": tipo_op,
-            "Data effetto": data1,
-            "Data competenza": data2
-        })
-    return risultati
+# Parsing progressivo
+print("Parsing in corso...")
+read_start = time.time()
+total_lines = len(lines)
+buffer = ""
+chunk = 50000
+for i in range(0, total_lines, chunk):
+    print_progress(i, total_lines, "Caricamento")
+    buffer += "".join(lines[i:i+chunk])
+print_progress(total_lines, total_lines, "Caricamento")
+print(f"Tempo lettura: {format_time(time.time() - read_start)}\n")
 
+# Lettura con pandas
+df_raw = pd.read_csv(StringIO(buffer), sep=';', header=None, dtype=str, low_memory=False)
+del buffer
+print(f"Dati caricati: {len(df_raw)} righe, {len(df_raw.columns)} colonne\n")
 
-def processare_commgfnz():
-    """Processa il file COMMGFNZ.TXT"""
-    file_path = trova_file("COMMGFNZ")
-    if not file_path:
-        return []
+# Conversione colonne data nel RAW
+for col in DATE_COLUMNS:
+    if col in df_raw.columns:
+        idx = df_raw.columns.get_loc(col)
+        print(f"→ Conversione date: {col}")
+        df_raw.iloc[:, idx] = df_raw.iloc[:, idx].apply(force_date_conversion)
 
-    try:
-        with open(file_path, "r", encoding="utf-8") as file:
-            lines = file.readlines()
-    except Exception as e:
-        print(f"❌ Errore lettura {file_path}: {e}")
-        return []
+# Estrazione colonne richieste
+df_subset = df_raw.iloc[:, COLUMN_INDICES].copy()
+df_subset.columns = COLUMN_HEADERS[:len(df_subset.columns)]
 
-    risultati = []
-    for line in lines:
-        if len(line) < 137 or "SD" in line:
-            continue
+# Creazione file Excel
+output_file = f"{os.path.splitext(input_file)[0]}.xlsx"
 
-        polizza_text = line[0:11].strip()
-        polizza = int(polizza_text) if polizza_text.isdigit() else polizza_text
-        garanzia = line[11:16].strip().lstrip("T")
-        fondo = line[16:35].strip()
-        comm_text = line[35:62].strip()
+# Controlla se è aperto
+try:
+    if os.path.exists(output_file):
+        os.rename(output_file, output_file)  # se fallisce → file aperto
+except PermissionError:
+    print(f"❌ Il file '{output_file}' è aperto in Excel. Chiudilo e riesegui.")
+    input("Premi INVIO per uscire...")
+    sys.exit(1)
 
-        if comm_text.isdigit():
-            commissioni_base = float(comm_text) / 10_000_000
-            commissioni = round(commissioni_base * 0.76154, 2)
-        else:
-            commissioni = 0.0
+print(f"Creazione Excel: {output_file}")
+write_start = time.time()
 
-        tipo_op = line[119:121].strip()
+with pd.ExcelWriter(output_file, engine="xlsxwriter", date_format="dd/mm/yyyy") as writer:
+    total_steps = 2
+    df_subset.to_excel(writer, sheet_name="DA_COPIARE", index=False)
+    print_progress(1, total_steps, "Scrittura fogli")
+    df_raw.to_excel(writer, sheet_name="Originale", index=False)
+    print_progress(2, total_steps, "Scrittura fogli")
 
-        def parse_data(txt):
-            if len(txt) == 8 and txt.isdigit():
-                try:
-                    return datetime(int(txt[:4]), int(txt[4:6]), int(txt[6:8])).date()
-                except:
-                    pass
-            return None
+print(f"✅ File Excel creato: {output_file}")
+elapsed = time.time() - start_time
+print(f"Tempo totale: {format_time(elapsed)}")
+print(f"Righe totali: {len(df_raw)} ({len(df_raw.columns)} colonne)\n")
 
-        data1 = parse_data(line[121:129].strip())
-        data2 = parse_data(line[129:137].strip())
-
-        risultati.append({
-            "Polizza": polizza,
-            "Garanzia": garanzia,
-            "Fondo": fondo,
-            "Commissioni": commissioni,
-            "Tipo Operazione": tipo_op,
-            "Data effetto": data1,
-            "Data competenza": data2
-        })
-    return risultati
-
-
-def main():
-    """Funzione principale"""
-    start_time = time.time()
-    
-    print("=" * 70)
-    print("PROCESSAMENTO FILE REPCOMMG E COMMGFNZ")
-    print("=" * 70)
-    
-    cartella = get_working_directory()
-    if getattr(sys, 'frozen', False):
-        print("Modalità: EXE compilato")
-    else:
-        print("Modalità: Script Python")
-    
-    print(f"Cartella di lavoro: {cartella}\n")
-
-    print("Processando REPCOMMG...")
-    dati_repcommg = processare_repcommg()
-    print(f"✓ REPCOMMG: {len(dati_repcommg)} righe processate")
-
-    print("\nProcessando COMMGFNZ...")
-    dati_commgfnz = processare_commgfnz()
-    print(f"✓ COMMGFNZ: {len(dati_commgfnz)} righe processate")
-
-    print("\nUnendo tutti i dati...")
-    tutti_dati = dati_repcommg + dati_commgfnz
-
-    if tutti_dati:
-        output_file = os.path.join(cartella, "REPCOMMG+COMMGFNZ.xlsx")
-        try:
-            with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
-                df_finale = pd.DataFrame(tutti_dati)
-                df_repcommg = pd.DataFrame(dati_repcommg)
-                df_commgfnz = pd.DataFrame(dati_commgfnz)
-
-                df_finale.to_excel(writer, sheet_name="FINALE", index=False)
-                df_repcommg.to_excel(writer, sheet_name="REPCOMMG", index=False)
-                df_commgfnz.to_excel(writer, sheet_name="COMMGFNZ", index=False)
-
-            print(f"\n✅ File Excel creato: {output_file}")
-            print(f"📊 FINALE: {len(tutti_dati)} righe totali")
-            print(f"⏱️  Tempo di esecuzione: {time.time() - start_time:.2f}s")
-
-        except Exception as e:
-            print(f"\n❌ ERRORE durante la creazione dell’Excel: {e}")
-            import traceback
-            traceback.print_exc()
-    else:
-        print("\n❌ Nessun dato trovato")
-
-    print("\n" + "=" * 70)
-    input("\nPremi INVIO per chiudere...")
-
-
-if __name__ == "__main__":
-    main()
+input("Operazione completata! Premi INVIO per uscire...")
