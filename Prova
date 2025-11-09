@@ -16,15 +16,8 @@ Sub RiepilogoDatiMensili()
     ' Riferimento al workbook corrente
     Set wbMain = ThisWorkbook
     
-    ' Verifica se esiste il foglio "CLX Riepilogo"
-    On Error Resume Next
-    Set wsRiepilogo = wbMain.Worksheets("CLX Riepilogo")
-    On Error GoTo 0
-    
-    If wsRiepilogo Is Nothing Then
-        MsgBox "Il foglio 'CLX Riepilogo' non esiste!", vbCritical
-        Exit Sub
-    End If
+    ' Usa il foglio attivo (quello dove si trova il pulsante)
+    Set wsRiepilogo = ActiveSheet
     
     ' Pulisce il foglio riepilogo (mantiene solo l'intestazione)
     ultimaRigaRiepilogo = wsRiepilogo.Cells(wsRiepilogo.Rows.Count, "A").End(xlUp).Row
