@@ -1,88 +1,89 @@
-Sub CopiaFattureNelRiepilogo()
-    Dim ws As Worksheet
+Sub RiepilogoDatiMensili()
+    Dim wbMain As Workbook
     Dim wsRiepilogo As Worksheet
-    Dim ultimaRiga As Long
-    Dim rigaDestino As Long
-    Dim mesi As Variant
+    Dim wsMese As Worksheet
+    Dim mesi() As String
+    Dim ultimaRigaRiepilogo As Long
+    Dim ultimaRigaMese As Long
     Dim i As Integer
-    Dim rngDaCopia As Range
+    Dim rigaMese As Long
+    Dim rigaRiepilogo As Long
+    Dim nomeMese As String
     
-    ' Array con i nomi dei fogli mensili
-    mesi = Array("Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", _
-                 "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre")
+    ' Array con i nomi dei mesi in italiano
+    mesi = Split("Gennaio,Febbraio,Marzo,Aprile,Maggio,Giugno,Luglio,Agosto,Settembre,Ottobre,Novembre,Dicembre", ",")
     
-    ' Imposta il foglio Riepilogo
-    Set wsRiepilogo = ThisWorkbook.Sheets("CLX Riepilogo")
+    ' Riferimento al workbook corrente
+    Set wbMain = ThisWorkbook
     
-    ' Pulisci il riepilogo (mantieni solo l'intestazione alla riga 1)
-    wsRiepilogo.Rows("2:" & wsRiepilogo.Rows.Count).ClearContents
+    ' Verifica se esiste il foglio "CLX Riepilogo"
+    On Error Resume Next
+    Set wsRiepilogo = wbMain.Worksheets("CLX Riepilogo")
+    On Error GoTo 0
     
-    ' Inizia dalla riga 2
-    rigaDestino = 2
+    If wsRiepilogo Is Nothing Then
+        MsgBox "Il foglio 'CLX Riepilogo' non esiste!", vbCritical
+        Exit Sub
+    End If
     
-    ' Cicla tutti i mesi
+    ' Pulisce il foglio riepilogo (mantiene solo l'intestazione)
+    ultimaRigaRiepilogo = wsRiepilogo.Cells(wsRiepilogo.Rows.Count, "A").End(xlUp).Row
+    If ultimaRigaRiepilogo > 1 Then
+        wsRiepilogo.Rows("2:" & ultimaRigaRiepilogo).Delete
+    End If
+    
+    ' Contatore per la riga di destinazione nel riepilogo
+    rigaRiepilogo = 2
+    
+    ' Cicla attraverso tutti i mesi
     For i = LBound(mesi) To UBound(mesi)
+        nomeMese = mesi(i)
+        
+        ' Verifica se il foglio del mese esiste
         On Error Resume Next
-        Set ws = ThisWorkbook.Sheets(mesi(i))
+        Set wsMese = wbMain.Worksheets(nomeMese)
         On Error GoTo 0
         
-        If Not ws Is Nothing Then
-            ' Trova l'ultima riga con dati nella colonna F (Fornitore)
-            ultimaRiga = ws.Cells(ws.Rows.Count, "F").End(xlUp).Row
+        If Not wsMese Is Nothing Then
+            ' Trova l'ultima riga con dati nel foglio mensile (colonna F)
+            ultimaRigaMese = wsMese.Cells(wsMese.Rows.Count, "F").End(xlUp).Row
             
-            ' Se ci sono dati (oltre l'intestazione)
-            If ultimaRiga > 1 Then
-                ' Copia Data registrazione (colonna A) → Riepilogo colonna I (temporanea per calcolare il mese)
-                ws.Range("A2:A" & ultimaRiga).Copy
-                wsRiepilogo.Range("I" & rigaDestino).PasteSpecial xlPasteValues
-                
-                ' Copia Fornitore (colonna F) → Riepilogo colonna A
-                ws.Range("F2:F" & ultimaRiga).Copy
-                wsRiepilogo.Range("A" & rigaDestino).PasteSpecial xlPasteValues
-                
-                ' Copia Anagrafica (colonna G) → Riepilogo colonna B
-                ws.Range("G2:G" & ultimaRiga).Copy
-                wsRiepilogo.Range("B" & rigaDestino).PasteSpecial xlPasteValues
-                
-                ' Copia Estremi fattura (colonna H) → Riepilogo colonna C
-                ws.Range("H2:H" & ultimaRiga).Copy
-                wsRiepilogo.Range("C" & rigaDestino).PasteSpecial xlPasteValues
-                
-                ' Copia Imponibile (colonna I) → Riepilogo colonna D
-                ws.Range("I2:I" & ultimaRiga).Copy
-                wsRiepilogo.Range("D" & rigaDestino).PasteSpecial xlPasteValues
-                
-                ' Copia Spese (colonna J) → Riepilogo colonna E
-                ws.Range("J2:J" & ultimaRiga).Copy
-                wsRiepilogo.Range("E" & rigaDestino).PasteSpecial xlPasteValues
-                
-                ' Copia Quota esente (colonna K) → Riepilogo colonna F
-                ws.Range("K2:K" & ultimaRiga).Copy
-                wsRiepilogo.Range("F" & rigaDestino).PasteSpecial xlPasteValues
-                
-                ' Colonna G (Ritenuta) rimane vuota
-                
-                ' Aggiorna la prossima riga di destinazione
-                rigaDestino = rigaDestino + ultimaRiga - 1
+            ' Copia i dati se ci sono righe oltre l'intestazione
+            If ultimaRigaMese > 1 Then
+                For rigaMese = 2 To ultimaRigaMese
+                    ' Verifica che la riga non sia vuota
+                    If wsMese.Cells(rigaMese, "F").Value <> "" Then
+                        ' Fornitore (F -> A)
+                        wsRiepilogo.Cells(rigaRiepilogo, "A").Value = wsMese.Cells(rigaMese, "F").Value
+                        ' Anagrafica (G -> B)
+                        wsRiepilogo.Cells(rigaRiepilogo, "B").Value = wsMese.Cells(rigaMese, "G").Value
+                        ' Estremi di fattura (H -> C)
+                        wsRiepilogo.Cells(rigaRiepilogo, "C").Value = wsMese.Cells(rigaMese, "H").Value
+                        ' Imponibile (I -> D)
+                        wsRiepilogo.Cells(rigaRiepilogo, "D").Value = wsMese.Cells(rigaMese, "I").Value
+                        ' Spese (J -> E)
+                        wsRiepilogo.Cells(rigaRiepilogo, "E").Value = wsMese.Cells(rigaMese, "J").Value
+                        ' Quota esente (K -> F)
+                        wsRiepilogo.Cells(rigaRiepilogo, "F").Value = wsMese.Cells(rigaMese, "K").Value
+                        ' Ritenuta (L -> G)
+                        wsRiepilogo.Cells(rigaRiepilogo, "G").Value = wsMese.Cells(rigaMese, "L").Value
+                        ' Mese (H)
+                        wsRiepilogo.Cells(rigaRiepilogo, "H").Value = nomeMese
+                        
+                        rigaRiepilogo = rigaRiepilogo + 1
+                    End If
+                Next rigaMese
             End If
             
-            Set ws = Nothing
+            Set wsMese = Nothing
         End If
     Next i
     
-    ' Aggiungi il mese nella colonna H estraendolo dalla data (colonna I)
-    ultimaRiga = wsRiepilogo.Cells(wsRiepilogo.Rows.Count, "A").End(xlUp).Row
-    If ultimaRiga > 1 Then
-        For i = 2 To ultimaRiga
-            If wsRiepilogo.Cells(i, "I").Value <> "" Then
-                wsRiepilogo.Cells(i, "H").Value = Format(wsRiepilogo.Cells(i, "I").Value, "MMMM")
-            End If
-        Next i
-    End If
+    ' Formatta il foglio riepilogo
+    With wsRiepilogo
+        .Columns("A:H").AutoFit
+    End With
     
-    ' Elimina la colonna temporanea I (opzionale)
-    ' wsRiepilogo.Columns("I").Delete
+    MsgBox "Riepilogo completato! Totale righe copiate: " & (rigaRiepilogo - 2), vbInformation
     
-    Application.CutCopyMode = False
-    MsgBox "Riepilogo aggiornato con successo! Totale righe: " & ultimaRiga - 1, vbInformation, "Completato"
 End Sub
