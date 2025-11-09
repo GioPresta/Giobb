@@ -1,38 +1,88 @@
-import pyautogui
-import time
-
-# Disabilita il fail-safe (muovi mouse in angolo per fermare)
-# Commentalo se vuoi mantenere la sicurezza
-# pyautogui.FAILSAFE = True
-
-print("Script avviato. Premi Ctrl+C per fermare.")
-print("Oppure muovi il mouse nell'angolo in alto a sinistra per attivare il fail-safe.")
-
-try:
-    while True:
-        # Ottieni le dimensioni dello schermo
-        larghezza, altezza = pyautogui.size()
-        centro_x = larghezza // 2
-        centro_y = altezza // 2
+Sub CopiaFattureNelRiepilogo()
+    Dim ws As Worksheet
+    Dim wsRiepilogo As Worksheet
+    Dim ultimaRiga As Long
+    Dim rigaDestino As Long
+    Dim mesi As Variant
+    Dim i As Integer
+    Dim rngDaCopia As Range
+    
+    ' Array con i nomi dei fogli mensili
+    mesi = Array("Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", _
+                 "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre")
+    
+    ' Imposta il foglio Riepilogo
+    Set wsRiepilogo = ThisWorkbook.Sheets("CLX Riepilogo")
+    
+    ' Pulisci il riepilogo (mantieni solo l'intestazione alla riga 1)
+    wsRiepilogo.Rows("2:" & wsRiepilogo.Rows.Count).ClearContents
+    
+    ' Inizia dalla riga 2
+    rigaDestino = 2
+    
+    ' Cicla tutti i mesi
+    For i = LBound(mesi) To UBound(mesi)
+        On Error Resume Next
+        Set ws = ThisWorkbook.Sheets(mesi(i))
+        On Error GoTo 0
         
-        # Muovi il mouse al centro dello schermo
-        pyautogui.moveTo(centro_x, centro_y, duration=0.5)
-        
-        # Movimento su e giù leggero (10 pixel)
-        pyautogui.moveRel(0, -10, duration=0.2)  # Su
-        pyautogui.moveRel(0, 10, duration=0.2)   # Giù
-        pyautogui.moveRel(0, -10, duration=0.2)  # Su
-        pyautogui.moveRel(0, 10, duration=0.2)   # Giù
-        
-        # Click
-        pyautogui.click()
-        
-        print(f"Movimento eseguito alle {time.strftime('%H:%M:%S')}")
-        
-        # Sospensione di 2 minuti (120 secondi)
-        time.sleep(120)
-        
-except KeyboardInterrupt:
-    print("\nScript fermato dall'utente.")
-except Exception as e:
-    print(f"\nErrore: {e}")
+        If Not ws Is Nothing Then
+            ' Trova l'ultima riga con dati nella colonna F (Fornitore)
+            ultimaRiga = ws.Cells(ws.Rows.Count, "F").End(xlUp).Row
+            
+            ' Se ci sono dati (oltre l'intestazione)
+            If ultimaRiga > 1 Then
+                ' Copia Data registrazione (colonna A) → Riepilogo colonna I (temporanea per calcolare il mese)
+                ws.Range("A2:A" & ultimaRiga).Copy
+                wsRiepilogo.Range("I" & rigaDestino).PasteSpecial xlPasteValues
+                
+                ' Copia Fornitore (colonna F) → Riepilogo colonna A
+                ws.Range("F2:F" & ultimaRiga).Copy
+                wsRiepilogo.Range("A" & rigaDestino).PasteSpecial xlPasteValues
+                
+                ' Copia Anagrafica (colonna G) → Riepilogo colonna B
+                ws.Range("G2:G" & ultimaRiga).Copy
+                wsRiepilogo.Range("B" & rigaDestino).PasteSpecial xlPasteValues
+                
+                ' Copia Estremi fattura (colonna H) → Riepilogo colonna C
+                ws.Range("H2:H" & ultimaRiga).Copy
+                wsRiepilogo.Range("C" & rigaDestino).PasteSpecial xlPasteValues
+                
+                ' Copia Imponibile (colonna I) → Riepilogo colonna D
+                ws.Range("I2:I" & ultimaRiga).Copy
+                wsRiepilogo.Range("D" & rigaDestino).PasteSpecial xlPasteValues
+                
+                ' Copia Spese (colonna J) → Riepilogo colonna E
+                ws.Range("J2:J" & ultimaRiga).Copy
+                wsRiepilogo.Range("E" & rigaDestino).PasteSpecial xlPasteValues
+                
+                ' Copia Quota esente (colonna K) → Riepilogo colonna F
+                ws.Range("K2:K" & ultimaRiga).Copy
+                wsRiepilogo.Range("F" & rigaDestino).PasteSpecial xlPasteValues
+                
+                ' Colonna G (Ritenuta) rimane vuota
+                
+                ' Aggiorna la prossima riga di destinazione
+                rigaDestino = rigaDestino + ultimaRiga - 1
+            End If
+            
+            Set ws = Nothing
+        End If
+    Next i
+    
+    ' Aggiungi il mese nella colonna H estraendolo dalla data (colonna I)
+    ultimaRiga = wsRiepilogo.Cells(wsRiepilogo.Rows.Count, "A").End(xlUp).Row
+    If ultimaRiga > 1 Then
+        For i = 2 To ultimaRiga
+            If wsRiepilogo.Cells(i, "I").Value <> "" Then
+                wsRiepilogo.Cells(i, "H").Value = Format(wsRiepilogo.Cells(i, "I").Value, "MMMM")
+            End If
+        Next i
+    End If
+    
+    ' Elimina la colonna temporanea I (opzionale)
+    ' wsRiepilogo.Columns("I").Delete
+    
+    Application.CutCopyMode = False
+    MsgBox "Riepilogo aggiornato con successo! Totale righe: " & ultimaRiga - 1, vbInformation, "Completato"
+End Sub
