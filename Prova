@@ -4,22 +4,24 @@ import glob
 import threading
 import datetime
 import traceback
+import warnings
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 import pandas as pd
-import warnings
 
-# Suppress warnings
+# ------------------------
+# Setup warnings & paths
+# ------------------------
 pd.options.mode.chained_assignment = None
 warnings.filterwarnings("ignore")
 
-# Directory setup
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 MAINS_DIR = os.path.dirname(CURRENT_DIR)
 PROJECT_ROOT = os.path.dirname(MAINS_DIR)
 SOURCES_DIR = os.path.join(PROJECT_ROOT, "Sources")
 INPUTS_DIR = os.path.join(PROJECT_ROOT, "Inputs")
 RESULTS_DIR = os.path.join(PROJECT_ROOT, "results", "AssetPricing_results")
+LOGO_DIR = os.path.join(PROJECT_ROOT, "logo")  # cartella logo
 
 os.makedirs(INPUTS_DIR, exist_ok=True)
 os.makedirs(RESULTS_DIR, exist_ok=True)
@@ -27,29 +29,25 @@ os.makedirs(RESULTS_DIR, exist_ok=True)
 if SOURCES_DIR not in sys.path:
     sys.path.append(SOURCES_DIR)
 
+# ------------------------
+# Helper functions
+# ------------------------
 def valuation_date_default():
-    """Calculate default valuation date (day 30 of previous quarter)"""
     today = datetime.date.today()
     current_quarter = (today.month - 1) // 3 + 1
-    
     if current_quarter == 1:
-        # Q1 -> previous Q4 of last year
         year = today.year - 1
         month = 12
     else:
-        # Q2->Q1, Q3->Q2, Q4->Q3
         year = today.year
         month = (current_quarter - 1) * 3
-    
     return f"{year}-{month:02d}-30"
 
 def find_first(pattern):
-    """Find first file matching pattern in INPUTS_DIR"""
     matches = sorted(glob.glob(os.path.join(INPUTS_DIR, pattern)))
     return matches[0] if matches else ""
 
 def shorten_path(full_path):
-    """Show filename with modification date"""
     if not full_path:
         return ""
     try:
@@ -59,24 +57,29 @@ def shorten_path(full_path):
     except:
         return os.path.basename(full_path)
 
-# CustomTkinter theme
+# ------------------------
+# GUI
+# ------------------------
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Asset Pricing CARDIF - Repricing Sensi 3.13.7")
+        self.title("Asset Pricing BCC - Repricing Sensi 3.13.7")
         self.geometry("1000x700")
         self.resizable(False, False)
 
         # Window icon
-        icon_path = os.path.join(INPUTS_DIR, "bnp.ico")
+        icon_path = os.path.join(LOGO_DIR, "bnp.ico")
         if os.path.exists(icon_path):
             try:
                 self.iconbitmap(default=icon_path)
             except:
                 pass
+
+        # Global GUI exception handler
+        self.report_callback_exception = self.gui_exception_handler
 
         # Variables
         self.assets_dataset_path = ctk.StringVar()
@@ -101,14 +104,16 @@ class App(ctk.CTk):
         self._build_ui()
         self.autofill_inputs()
 
+    # ------------------------
+    # GUI building
+    # ------------------------
     def _build_ui(self):
-        # Header: title
+        # Header
         title_frame = ctk.CTkFrame(self.container, fg_color="transparent")
         title_frame.pack(fill="x", pady=(0, 6))
-
         title_label = ctk.CTkLabel(
             title_frame,
-            text="Asset Pricing CARDIF — Repricing Sensi 3.13.7",
+            text="Asset Pricing BCC - Repricing Sensi 3.13.7",
             font=ctk.CTkFont(size=24, weight="bold")
         )
         title_label.pack(side="left", pady=5)
@@ -122,12 +127,11 @@ class App(ctk.CTk):
 
         # Input files
         file_rows = [
-            ("Asset tool file", self.assets_dataset_path, self.assets_dataset_path_display),
+            ("Asset dataset", self.assets_dataset_path, self.assets_dataset_path_display),
             ("Spot curve central", self.spot_curve_path, self.spot_curve_path_display),
-            ("Spreads floating assets", self.spread_input_path, self.spread_input_path_display),
+            ("Spread input", self.spread_input_path, self.spread_input_path_display),
             ("Inflation index", self.inflation_index_path, self.inflation_index_path_display),
         ]
-
         for idx, (label_text, var, display_var) in enumerate(file_rows):
             ctk.CTkLabel(form_card, text=label_text, anchor="w").grid(
                 row=idx, column=0, sticky="w", padx=5, pady=2
@@ -148,7 +152,6 @@ class App(ctk.CTk):
             ).grid(row=idx, column=2, padx=5, pady=2)
 
         pr = 4
-
         # Valuation date
         ctk.CTkLabel(form_card, text="Valuation date (YYYY-MM-DD)", anchor="w").grid(
             row=pr, column=0, sticky="w", padx=5, pady=2
@@ -156,7 +159,6 @@ class App(ctk.CTk):
         ctk.CTkEntry(form_card, textvariable=self.valuation_date).grid(
             row=pr, column=1, sticky="ew", padx=5, pady=2
         )
-
         # Spread up
         ctk.CTkLabel(form_card, text="Spread up", anchor="w").grid(
             row=pr + 1, column=0, sticky="w", padx=5, pady=2
@@ -164,7 +166,6 @@ class App(ctk.CTk):
         ctk.CTkEntry(form_card, textvariable=self.spread_up).grid(
             row=pr + 1, column=1, sticky="ew", padx=5, pady=2
         )
-
         # Spread down
         ctk.CTkLabel(form_card, text="Spread down", anchor="w").grid(
             row=pr + 2, column=0, sticky="w", padx=5, pady=2
@@ -172,7 +173,6 @@ class App(ctk.CTk):
         ctk.CTkEntry(form_card, textvariable=self.spread_down).grid(
             row=pr + 2, column=1, sticky="ew", padx=5, pady=2
         )
-
         # UFR
         ctk.CTkLabel(form_card, text="UFR (%)", anchor="w").grid(
             row=pr + 3, column=0, sticky="w", padx=5, pady=2
@@ -180,7 +180,6 @@ class App(ctk.CTk):
         ctk.CTkEntry(form_card, textvariable=self.ufr).grid(
             row=pr + 3, column=1, sticky="ew", padx=5, pady=2
         )
-
         # Output directory
         ctk.CTkLabel(form_card, text="Output directory", anchor="w").grid(
             row=pr + 4, column=0, sticky="w", padx=5, pady=2
@@ -200,10 +199,9 @@ class App(ctk.CTk):
             command=self.choose_output
         ).grid(row=pr + 4, column=2, padx=5, pady=2)
 
-        # Frame for run button and log
+        # Run button + log
         run_frame = ctk.CTkFrame(self.container, fg_color="transparent")
         run_frame.pack(fill="x", padx=10, pady=(2, 2))
-
         self.run_btn = ctk.CTkButton(
             run_frame,
             text="Run Script",
@@ -212,13 +210,12 @@ class App(ctk.CTk):
             command=self.run_script_thread
         )
         self.run_btn.pack(fill="x", pady=(0, 2))
-
         self.log_label = ctk.CTkLabel(run_frame, text="", anchor="w")
         self.log_label.pack(fill="x", pady=(0, 0))
 
-    # ----------------------
+    # ------------------------
     # Helpers
-    # ----------------------
+    # ------------------------
     def browse_file(self, var, display_var):
         p = filedialog.askopenfilename(
             initialdir=INPUTS_DIR,
@@ -235,7 +232,6 @@ class App(ctk.CTk):
             self.output_directory_display.set(shorten_path(p))
 
     def autofill_inputs(self):
-        """Auto-fill input fields with files matching patterns"""
         self.assets_dataset_path.set(find_first("Asset_tool_*.xlsx"))
         self.spot_curve_path.set(find_first("Spot_curve_central_*.xlsx"))
         self.spread_input_path.set(find_first("Spreads_tasso_variabile_*.xlsx"))
@@ -266,49 +262,58 @@ class App(ctk.CTk):
             return
         self.run_btn.configure(state="disabled")
         self.log_label.configure(text="Running…")
-        t = threading.Thread(target=self.run_script, daemon=True)
+
+        def target():
+            try:
+                self.run_script()
+            except Exception as e:
+                tb = traceback.format_exc()
+                messagebox.showerror("Errore Script", f"{str(e)}\n\nDettagli:\n{tb}")
+            finally:
+                self.run_btn.configure(state="normal")
+
+        t = threading.Thread(target=target, daemon=True)
         t.start()
 
     def run_script(self):
-        try:
-            os.chdir(PROJECT_ROOT)
-            from AssetPricingSource.Options import Options
-            from AssetPricingSource.Executor import Executor
-            from AssetPricingSource.Initializer import Initializer
-            from AssetPricingSource.Reader import Reader
-            from AssetPricingSource.PostProcessing import PostProcessing
-            from AssetPricingSource.Writer import Writer
-            from AssetPricingSource.SmithWilsonModel import SmithWilsonModel
+        # Qui metti il codice Executor ecc. del tuo AssetPricing BCC
+        # Esempio:
+        os.chdir(PROJECT_ROOT)
+        from AssetPricingSource.Options import Options
+        from AssetPricingSource.Executor import Executor
+        from AssetPricingSource.Initializer import Initializer
+        from AssetPricingSource.Reader import Reader
+        from AssetPricingSource.PostProcessing import PostProcessing
+        from AssetPricingSource.Writer import Writer
+        from AssetPricingSource.SmithWilsonModel import SmithWilsonModel
 
-            options = Options(
-                assets_dataset_path=self.assets_dataset_path.get(),
-                yearly_spot_rates_curve_path=self.spot_curve_path.get(),
-                spread_input_path=self.spread_input_path.get(),
-                inflation_index_path=self.inflation_index_path.get(),
-                yearly_shocked_spot_rates_curve_path="",
-                valuation_date=self.valuation_date.get(),
-                curves_by_rating="",
-                sensitivity_risk="Interest",
-                spread_up=float(self.spread_up.get()),
-                spread_down=float(self.spread_down.get()),
-                UFR=float(self.ufr.get()) / 100.0,
-                output_directory=self.output_directory.get()
-            )
+        options = Options(
+            assets_dataset_path=self.assets_dataset_path.get(),
+            yearly_spot_rates_curve_path=self.spot_curve_path.get(),
+            spread_input_path=self.spread_input_path.get(),
+            inflation_index_path=self.inflation_index_path.get(),
+            yearly_shocked_spot_rates_curve_path="",
+            valuation_date=self.valuation_date.get(),
+            curves_by_rating="",
+            sensitivity_risk="Interest",
+            spread_up=float(self.spread_up.get()),
+            spread_down=float(self.spread_down.get()),
+            UFR=float(self.ufr.get())/100,
+            output_directory=self.output_directory.get()
+        )
 
-            initializer = Initializer(options)
-            smith_wilson_model = SmithWilsonModel(options)
-            reader = Reader(options, smith_wilson_model)
-            post_processing = PostProcessing(options)
-            writer = Writer(options)
+        initializer = Initializer(options)
+        smith_wilson_model = SmithWilsonModel(options)
+        reader = Reader(options, smith_wilson_model)
+        post_processing = PostProcessing(options)
+        writer = Writer(options)
 
-            Executor(options, initializer, reader, post_processing, writer).run()
-            self.log_label.configure(text="Script executed successfully")
-        except:
-            traceback.print_exc()
-            self.log_label.configure(text="Error occurred")
-        finally:
-            self.run_btn.configure(state="normal")
+        Executor(options, initializer, reader, post_processing, writer).run()
+        self.log_label.configure(text="Script eseguito correttamente")
 
+    def gui_exception_handler(self, exc, val, tb):
+        tb_str = ''.join(traceback.format_exception(exc, val, tb))
+        messagebox.showerror("Errore GUI", f"{val}\n\nDettagli:\n{tb_str}")
 
 if __name__ == "__main__":
     app = App()
