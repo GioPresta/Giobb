@@ -110,17 +110,17 @@ class App(ctk.CTk):
     def _build_ui(self):
         # Header
         title_frame = ctk.CTkFrame(self.container, fg_color="transparent")
-        title_frame.pack(fill="x", pady=(0, 6))
+        title_frame.pack(fill="x", pady=(0, 4))
         title_label = ctk.CTkLabel(
             title_frame,
             text="Asset Pricing BCC - Repricing Sensi 3.13.7",
             font=ctk.CTkFont(size=24, weight="bold")
         )
-        title_label.pack(side="left", pady=5)
+        title_label.pack(side="left", pady=2)
 
         # Form card
         form_card = ctk.CTkFrame(self.container, corner_radius=12, fg_color="#1b1f24")
-        form_card.pack(fill="both", expand=True, padx=10, pady=(0, 2))
+        form_card.pack(fill="both", expand=True, padx=10, pady=(0, 0))
         form_card.grid_columnconfigure(0, weight=1)
         form_card.grid_columnconfigure(1, weight=3)
         form_card.grid_columnconfigure(2, weight=0)
@@ -134,14 +134,14 @@ class App(ctk.CTk):
         ]
         for idx, (label_text, var, display_var) in enumerate(file_rows):
             ctk.CTkLabel(form_card, text=label_text, anchor="w").grid(
-                row=idx, column=0, sticky="w", padx=5, pady=2
+                row=idx, column=0, sticky="w", padx=5, pady=1
             )
             ctk.CTkEntry(
                 form_card,
                 textvariable=display_var,
                 state="readonly",
                 fg_color="#3a3f44"
-            ).grid(row=idx, column=1, sticky="ew", padx=5, pady=2)
+            ).grid(row=idx, column=1, sticky="ew", padx=5, pady=1)
             ctk.CTkButton(
                 form_card,
                 text="Browse",
@@ -149,47 +149,47 @@ class App(ctk.CTk):
                 fg_color="#00A678",
                 hover=True,
                 command=lambda v=var, d=display_var: self.browse_file(v, d)
-            ).grid(row=idx, column=2, padx=5, pady=2)
+            ).grid(row=idx, column=2, padx=5, pady=1)
 
         pr = 4
         # Valuation date
         ctk.CTkLabel(form_card, text="Valuation date (YYYY-MM-DD)", anchor="w").grid(
-            row=pr, column=0, sticky="w", padx=5, pady=2
+            row=pr, column=0, sticky="w", padx=5, pady=1
         )
         ctk.CTkEntry(form_card, textvariable=self.valuation_date).grid(
-            row=pr, column=1, sticky="ew", padx=5, pady=2
+            row=pr, column=1, sticky="ew", padx=5, pady=1
         )
         # Spread up
         ctk.CTkLabel(form_card, text="Spread up", anchor="w").grid(
-            row=pr + 1, column=0, sticky="w", padx=5, pady=2
+            row=pr + 1, column=0, sticky="w", padx=5, pady=1
         )
         ctk.CTkEntry(form_card, textvariable=self.spread_up).grid(
-            row=pr + 1, column=1, sticky="ew", padx=5, pady=2
+            row=pr + 1, column=1, sticky="ew", padx=5, pady=1
         )
         # Spread down
         ctk.CTkLabel(form_card, text="Spread down", anchor="w").grid(
-            row=pr + 2, column=0, sticky="w", padx=5, pady=2
+            row=pr + 2, column=0, sticky="w", padx=5, pady=1
         )
         ctk.CTkEntry(form_card, textvariable=self.spread_down).grid(
-            row=pr + 2, column=1, sticky="ew", padx=5, pady=2
+            row=pr + 2, column=1, sticky="ew", padx=5, pady=1
         )
         # UFR
         ctk.CTkLabel(form_card, text="UFR (%)", anchor="w").grid(
-            row=pr + 3, column=0, sticky="w", padx=5, pady=2
+            row=pr + 3, column=0, sticky="w", padx=5, pady=1
         )
         ctk.CTkEntry(form_card, textvariable=self.ufr).grid(
-            row=pr + 3, column=1, sticky="ew", padx=5, pady=2
+            row=pr + 3, column=1, sticky="ew", padx=5, pady=1
         )
         # Output directory
         ctk.CTkLabel(form_card, text="Output directory", anchor="w").grid(
-            row=pr + 4, column=0, sticky="w", padx=5, pady=2
+            row=pr + 4, column=0, sticky="w", padx=5, pady=1
         )
         ctk.CTkEntry(
             form_card,
             textvariable=self.output_directory_display,
             state="readonly",
             fg_color="#3a3f44"
-        ).grid(row=pr + 4, column=1, sticky="ew", padx=5, pady=2)
+        ).grid(row=pr + 4, column=1, sticky="ew", padx=5, pady=1)
         ctk.CTkButton(
             form_card,
             text="Browse",
@@ -197,11 +197,12 @@ class App(ctk.CTk):
             fg_color="#00A678",
             hover=True,
             command=self.choose_output
-        ).grid(row=pr + 4, column=2, padx=5, pady=2)
+        ).grid(row=pr + 4, column=2, padx=5, pady=1)
 
-        # Run button + log
+        # Run + Reset + Log frame (subito sotto form)
         run_frame = ctk.CTkFrame(self.container, fg_color="transparent")
         run_frame.pack(fill="x", padx=10, pady=(2, 2))
+
         self.run_btn = ctk.CTkButton(
             run_frame,
             text="Run Script",
@@ -209,9 +210,19 @@ class App(ctk.CTk):
             hover=True,
             command=self.run_script_thread
         )
-        self.run_btn.pack(fill="x", pady=(0, 2))
+        self.run_btn.pack(fill="x", pady=(3,1))
+
+        self.reset_btn = ctk.CTkButton(
+            run_frame,
+            text="Reset Defaults",
+            fg_color="#FF6B6B",
+            hover=True,
+            command=self.reset_defaults
+        )
+        self.reset_btn.pack(fill="x", pady=(1,1))
+
         self.log_label = ctk.CTkLabel(run_frame, text="", anchor="w")
-        self.log_label.pack(fill="x", pady=(0, 0))
+        self.log_label.pack(fill="x", pady=(1,0))
 
     # ------------------------
     # Helpers
@@ -243,6 +254,13 @@ class App(ctk.CTk):
         self.inflation_index_path_display.set(shorten_path(self.inflation_index_path.get()))
         self.output_directory_display.set(shorten_path(self.output_directory.get()))
 
+    def reset_defaults(self):
+        """Reset dei valori di default nei campi precompilati"""
+        self.valuation_date.set(valuation_date_default())
+        self.spread_up.set("0.5")
+        self.spread_down.set("0.5")
+        self.ufr.set("3.3")
+
     def validate_inputs(self):
         try:
             datetime.datetime.strptime(self.valuation_date.get(), "%Y-%m-%d")
@@ -261,14 +279,14 @@ class App(ctk.CTk):
         if not self.validate_inputs():
             return
         self.run_btn.configure(state="disabled")
-        self.log_label.configure(text="Running…")
+        self.log_label.configure(text="Running… ⏳")
 
         def target():
             try:
                 self.run_script()
-                self.log_label.configure(text="Script eseguito correttamente")
+                self.log_label.configure(text="Script eseguito correttamente ✅")
             except Exception as e:
-                self.log_label.configure(text="Script FAILED")  # ← aggiorna a FAILED
+                self.log_label.configure(text="Script FAILED ❌")
                 tb = traceback.format_exc()
                 messagebox.showerror("Errore Script", f"{str(e)}\n\nDettagli:\n{tb}")
             finally:
@@ -278,7 +296,6 @@ class App(ctk.CTk):
         t.start()
 
     def run_script(self):
-        # Qui metti il codice Executor ecc. del tuo AssetPricing BCC
         os.chdir(PROJECT_ROOT)
         from AssetPricingSource.Options import Options
         from AssetPricingSource.Executor import Executor
