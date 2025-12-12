@@ -266,7 +266,9 @@ class App(ctk.CTk):
         def target():
             try:
                 self.run_script()
+                self.log_label.configure(text="Script eseguito correttamente")
             except Exception as e:
+                self.log_label.configure(text="Script FAILED")  # ← aggiorna a FAILED
                 tb = traceback.format_exc()
                 messagebox.showerror("Errore Script", f"{str(e)}\n\nDettagli:\n{tb}")
             finally:
@@ -277,7 +279,6 @@ class App(ctk.CTk):
 
     def run_script(self):
         # Qui metti il codice Executor ecc. del tuo AssetPricing BCC
-        # Esempio:
         os.chdir(PROJECT_ROOT)
         from AssetPricingSource.Options import Options
         from AssetPricingSource.Executor import Executor
@@ -309,7 +310,6 @@ class App(ctk.CTk):
         writer = Writer(options)
 
         Executor(options, initializer, reader, post_processing, writer).run()
-        self.log_label.configure(text="Script eseguito correttamente")
 
     def gui_exception_handler(self, exc, val, tb):
         tb_str = ''.join(traceback.format_exception(exc, val, tb))
