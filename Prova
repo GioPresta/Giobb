@@ -55,21 +55,18 @@ def shorten_path(full_path):
 
 def get_prev_quarter_files(quarter_selected, year_selected):
     """
-    quarter_selected: int 1-4
-    year_selected: int (anno del quarter selezionato)
-    Restituisce dizionario dei file del trimestre precedente
+    Restituisce dizionario dei file del trimestre precedente rispetto a quello selezionato
     """
-    # Trimestre precedente
     prev_quarter = quarter_selected - 1 if quarter_selected > 1 else 4
     prev_year = year_selected if quarter_selected > 1 else year_selected - 1
-    yy = str(prev_year)[-2:]  # due cifre anno
+    yy = str(prev_year)[-2:]
 
     files = {}
     patterns = {
         "assets_dataset": f"Asset_tool_Q{prev_quarter}{yy}_BCC*.xlsx",
         "spot_curve": f"Spot_curve_central_Q{prev_quarter}{yy}_no_va*.xlsx",
-        "spread_input": f"Spreads_tasso_variabile_Q{prev_quarter}{yy}_*.xlsx",
-        "inflation_index": f"inflation_index_Q{prev_quarter}{yy}_*.xlsx"
+        "spread_input": f"Spreads_tasso_variabile_Q{prev_quarter}{yy}*.xlsx",  # senza underscore
+        "inflation_index": f"inflation_index_Q{prev_quarter}{yy}*.xlsx"       # senza underscore
     }
 
     for key, pat in patterns.items():
@@ -91,7 +88,7 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Asset Pricing BCC - Repricing Sensi 3.13.7")
-        self.geometry("950x600")
+        self.geometry("900x580")
         self.resizable(False, False)
 
         # Window icon
@@ -126,7 +123,7 @@ class App(ctk.CTk):
         self.selected_year = ctk.StringVar(value=str(today.year))
 
         self.container = ctk.CTkFrame(self, corner_radius=12)
-        self.container.pack(fill="both", expand=True, padx=2, pady=2)
+        self.container.pack(fill="both", expand=True, padx=5, pady=5)
 
         self._build_ui()
         self.autofill_inputs()
@@ -135,22 +132,23 @@ class App(ctk.CTk):
     # Build GUI
     # ------------------------
     def _build_ui(self):
-        title_frame = ctk.CTkFrame(self.container, fg_color="transparent")
-        title_frame.pack(fill="x", pady=(0, 2))
+        # Titolo
         title_label = ctk.CTkLabel(
-            title_frame,
+            self.container,
             text="Asset Pricing BCC - Repricing Sensi 3.13.7",
-            font=ctk.CTkFont(size=22, weight="bold")
+            font=ctk.CTkFont(size=22, weight="bold"),
+            anchor="w"
         )
-        title_label.pack(side="left", pady=2)
+        title_label.pack(fill="x", pady=(0,5), padx=5)
 
+        # Card principale
         form_card = ctk.CTkFrame(self.container, corner_radius=12, fg_color="#1b1f24")
         form_card.pack(fill="both", expand=True, padx=5, pady=0)
         form_card.grid_columnconfigure(0, weight=1)
         form_card.grid_columnconfigure(1, weight=3)
         form_card.grid_columnconfigure(2, weight=0)
 
-        # Input files
+        # Input file rows
         file_rows = [
             ("Asset dataset", self.assets_dataset_path, self.assets_dataset_path_display),
             ("Spot curve central", self.spot_curve_path, self.spot_curve_path_display),
@@ -161,119 +159,68 @@ class App(ctk.CTk):
             ctk.CTkLabel(form_card, text=label_text, anchor="w").grid(
                 row=idx, column=0, sticky="w", padx=2, pady=0
             )
-            ctk.CTkEntry(
-                form_card,
-                textvariable=display_var,
-                state="readonly",
-                fg_color="#3a3f44"
-            ).grid(row=idx, column=1, sticky="ew", padx=2, pady=0)
-            ctk.CTkButton(
-                form_card,
-                text="Browse",
-                width=80,
-                fg_color="#00A678",
-                hover=True,
-                command=lambda v=var, d=display_var: self.browse_file(v, d)
-            ).grid(row=idx, column=2, padx=2, pady=0)
+            ctk.CTkEntry(form_card, textvariable=display_var, state="readonly", fg_color="#3a3f44").grid(
+                row=idx, column=1, sticky="ew", padx=2, pady=0
+            )
+            ctk.CTkButton(form_card, text="Browse", width=80, fg_color="#00A678", hover=True,
+                           command=lambda v=var, d=display_var: self.browse_file(v,d)).grid(row=idx, column=2, padx=2, pady=0)
 
         pr = 4
-        # Numeric entries only
+
+        # Valutazione numerica
         validate_numeric = (self.register(lambda P: all(c.isdigit() or c == "." for c in P)), "%P")
 
-        ctk.CTkLabel(form_card, text="Valuation date (YYYY-MM-DD)", anchor="w").grid(
-            row=pr, column=0, sticky="w", padx=2, pady=0
-        )
-        ctk.CTkEntry(form_card, textvariable=self.valuation_date, validate="key", validatecommand=validate_numeric).grid(
-            row=pr, column=1, sticky="ew", padx=2, pady=0
-        )
+        # Valuation Date rigidamente YYYY-MM-DD
+        def validate_valuation_date(P):
+            if len(P) > 10:
+                return False
+            for i, c in enumerate(P):
+                if i in [4,7]:
+                    if c != "-":
+                        return False
+                else:
+                    if not c.isdigit():
+                        return False
+            return True
+        vcmd_date = self.register(validate_valuation_date)
 
-        ctk.CTkLabel(form_card, text="Spread up", anchor="w").grid(
-            row=pr + 1, column=0, sticky="w", padx=2, pady=0
-        )
-        ctk.CTkEntry(form_card, textvariable=self.spread_up, validate="key", validatecommand=validate_numeric).grid(
-            row=pr + 1, column=1, sticky="ew", padx=2, pady=0
-        )
+        # Form fields
+        ctk.CTkLabel(form_card, text="Valuation date (YYYY-MM-DD)", anchor="w").grid(row=pr, column=0, sticky="w", padx=2, pady=0)
+        ctk.CTkEntry(form_card, textvariable=self.valuation_date, validate="key", validatecommand=(vcmd_date, "%P")).grid(row=pr, column=1, sticky="ew", padx=2, pady=0)
 
-        ctk.CTkLabel(form_card, text="Spread down", anchor="w").grid(
-            row=pr + 2, column=0, sticky="w", padx=2, pady=0
-        )
-        ctk.CTkEntry(form_card, textvariable=self.spread_down, validate="key", validatecommand=validate_numeric).grid(
-            row=pr + 2, column=1, sticky="ew", padx=2, pady=0
-        )
+        ctk.CTkLabel(form_card, text="Spread up", anchor="w").grid(row=pr+1, column=0, sticky="w", padx=2, pady=0)
+        ctk.CTkEntry(form_card, textvariable=self.spread_up, validate="key", validatecommand=validate_numeric).grid(row=pr+1, column=1, sticky="ew", padx=2, pady=0)
 
-        ctk.CTkLabel(form_card, text="UFR (%)", anchor="w").grid(
-            row=pr + 3, column=0, sticky="w", padx=2, pady=0
-        )
-        ctk.CTkEntry(form_card, textvariable=self.ufr, validate="key", validatecommand=validate_numeric).grid(
-            row=pr + 3, column=1, sticky="ew", padx=2, pady=0
-        )
+        ctk.CTkLabel(form_card, text="Spread down", anchor="w").grid(row=pr+2, column=0, sticky="w", padx=2, pady=0)
+        ctk.CTkEntry(form_card, textvariable=self.spread_down, validate="key", validatecommand=validate_numeric).grid(row=pr+2, column=1, sticky="ew", padx=2, pady=0)
+
+        ctk.CTkLabel(form_card, text="UFR (%)", anchor="w").grid(row=pr+3, column=0, sticky="w", padx=2, pady=0)
+        ctk.CTkEntry(form_card, textvariable=self.ufr, validate="key", validatecommand=validate_numeric).grid(row=pr+3, column=1, sticky="ew", padx=2, pady=0)
 
         # Output directory
-        ctk.CTkLabel(form_card, text="Output directory", anchor="w").grid(
-            row=pr + 4, column=0, sticky="w", padx=2, pady=0
-        )
-        ctk.CTkEntry(
-            form_card,
-            textvariable=self.output_directory_display,
-            state="readonly",
-            fg_color="#3a3f44"
-        ).grid(row=pr + 4, column=1, sticky="ew", padx=2, pady=0)
-        ctk.CTkButton(
-            form_card,
-            text="Browse",
-            width=80,
-            fg_color="#00A678",
-            hover=True,
-            command=self.choose_output
-        ).grid(row=pr + 4, column=2, padx=2, pady=0)
+        ctk.CTkLabel(form_card, text="Output directory", anchor="w").grid(row=pr+4, column=0, sticky="w", padx=2, pady=0)
+        ctk.CTkEntry(form_card, textvariable=self.output_directory_display, state="readonly", fg_color="#3a3f44").grid(row=pr+4, column=1, sticky="ew", padx=2, pady=0)
+        ctk.CTkButton(form_card, text="Browse", width=80, fg_color="#00A678", hover=True, command=self.choose_output).grid(row=pr+4, column=2, padx=2, pady=0)
 
-        # Quarter + Year selector
-        ctk.CTkLabel(form_card, text="Select Quarter", anchor="w").grid(
-            row=pr+5, column=0, sticky="w", padx=2, pady=0
-        )
-        ctk.CTkOptionMenu(
-            form_card,
-            variable=self.selected_quarter,
-            values=["Q1","Q2","Q3","Q4"],
-            command=lambda v: self.update_files_from_quarter_year()
-        ).grid(row=pr+5, column=1, sticky="w", padx=2, pady=0)
+        # Quarter + Year
+        ctk.CTkLabel(form_card, text="Select Quarter", anchor="w").grid(row=pr+5, column=0, sticky="w", padx=2, pady=0)
+        ctk.CTkOptionMenu(form_card, variable=self.selected_quarter, values=["Q1","Q2","Q3","Q4"],
+                           command=lambda v: self.update_files_from_quarter_year()).grid(row=pr+5, column=1, sticky="w", padx=2, pady=0)
 
-        ctk.CTkLabel(form_card, text="Select Year", anchor="w").grid(
-            row=pr+6, column=0, sticky="w", padx=2, pady=0
-        )
+        ctk.CTkLabel(form_card, text="Select Year", anchor="w").grid(row=pr+6, column=0, sticky="w", padx=2, pady=0)
         years_list = [str(y) for y in range(datetime.date.today().year-5, datetime.date.today().year+1)]
-        ctk.CTkOptionMenu(
-            form_card,
-            variable=self.selected_year,
-            values=years_list,
-            command=lambda v: self.update_files_from_quarter_year()
-        ).grid(row=pr+6, column=1, sticky="w", padx=2, pady=0)
+        ctk.CTkOptionMenu(form_card, variable=self.selected_year, values=years_list,
+                           command=lambda v: self.update_files_from_quarter_year()).grid(row=pr+6, column=1, sticky="w", padx=2, pady=0)
 
-        # Run + Reset + Log frame
+        # Run + Reset + Log
         run_frame = ctk.CTkFrame(self.container, fg_color="transparent")
-        run_frame.pack(fill="x", padx=5, pady=(2,2))
+        run_frame.pack(fill="x", padx=5, pady=(2,5))
 
         btn_frame = ctk.CTkFrame(run_frame, fg_color="transparent")
         btn_frame.pack(pady=2)
-
-        self.run_btn = ctk.CTkButton(
-            btn_frame,
-            text="Run Script",
-            fg_color="#00A678",
-            hover=True,
-            width=150,
-            command=self.run_script_thread
-        )
+        self.run_btn = ctk.CTkButton(btn_frame, text="Run Script", fg_color="#00A678", hover=True, width=150, command=self.run_script_thread)
         self.run_btn.pack(side="left", padx=5)
-
-        self.reset_btn = ctk.CTkButton(
-            btn_frame,
-            text="Reset Defaults",
-            fg_color="#FF6B6B",
-            hover=True,
-            width=150,
-            command=self.reset_defaults
-        )
+        self.reset_btn = ctk.CTkButton(btn_frame, text="Reset Defaults", fg_color="#FF6B6B", hover=True, width=150, command=self.reset_defaults)
         self.reset_btn.pack(side="left", padx=5)
 
         self.log_label = ctk.CTkLabel(run_frame, text="", anchor="nw")
@@ -299,10 +246,7 @@ class App(ctk.CTk):
         self.update_files_from_quarter_year()
 
     def browse_file(self, var, display_var):
-        p = filedialog.askopenfilename(
-            initialdir=INPUTS_DIR,
-            filetypes=[("Excel files", "*.xlsx;*.xls")]
-        )
+        p = filedialog.askopenfilename(initialdir=INPUTS_DIR, filetypes=[("Excel files", "*.xlsx;*.xls")])
         if p:
             var.set(p)
             display_var.set(shorten_path(p))
@@ -321,11 +265,12 @@ class App(ctk.CTk):
 
     def validate_inputs(self):
         try:
+            datetime.datetime.strptime(self.valuation_date.get(), "%Y-%m-%d")
             float(self.spread_up.get())
             float(self.spread_down.get())
             float(self.ufr.get())
         except:
-            messagebox.showerror("Error", "Check numeric fields")
+            messagebox.showerror("Error", "Check date and numeric fields")
             return False
         if not self.assets_dataset_path.get() or not self.spot_curve_path.get():
             messagebox.showerror("Error", "Required files missing")
