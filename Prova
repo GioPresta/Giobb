@@ -28,9 +28,20 @@ if SOURCES_DIR not in sys.path:
     sys.path.append(SOURCES_DIR)
 
 def valuation_date_default():
-    """Calculate default valuation date (31/12 of previous year)"""
+    """Calculate default valuation date (day 30 of previous quarter)"""
     today = datetime.date.today()
-    return f"{today.year - 1}-12-31"
+    current_quarter = (today.month - 1) // 3 + 1
+    
+    if current_quarter == 1:
+        # Q1 -> previous Q4 of last year
+        year = today.year - 1
+        month = 12
+    else:
+        # Q2->Q1, Q3->Q2, Q4->Q3
+        year = today.year
+        month = (current_quarter - 1) * 3
+    
+    return f"{year}-{month:02d}-30"
 
 def find_first(pattern):
     """Find first file matching pattern in INPUTS_DIR"""
