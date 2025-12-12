@@ -21,7 +21,7 @@ PROJECT_ROOT = os.path.dirname(MAINS_DIR)
 SOURCES_DIR = os.path.join(PROJECT_ROOT, "Sources")
 INPUTS_DIR = os.path.join(PROJECT_ROOT, "Inputs")
 RESULTS_DIR = os.path.join(PROJECT_ROOT, "results", "AssetPricing_results")
-LOGO_DIR = os.path.join(PROJECT_ROOT, "logo")  # cartella logo
+LOGO_DIR = os.path.join(PROJECT_ROOT, "logo")
 
 os.makedirs(INPUTS_DIR, exist_ok=True)
 os.makedirs(RESULTS_DIR, exist_ok=True)
@@ -53,19 +53,27 @@ def shorten_path(full_path):
     except:
         return os.path.basename(full_path)
 
-def find_most_recent(pattern, exclude_pattern=""):
+def get_prev_quarter_files_for_selected(quarter_selected):
     """
-    Cerca i file matching pattern, esclude quelli contenenti exclude_pattern
-    e restituisce il più recente.
+    quarter_selected: int 1-4
+    Restituisce dizionario dei file del trimestre precedente
     """
-    matches = [
-        f for f in glob.glob(os.path.join(INPUTS_DIR, pattern))
-        if exclude_pattern not in os.path.basename(f)
-    ]
-    if not matches:
-        return ""
-    matches.sort(key=lambda f: os.path.getmtime(f), reverse=True)
-    return matches[0]
+    prev_quarter = quarter_selected - 1 if quarter_selected > 1 else 4
+    patterns = {
+        "assets_dataset": f"Asset_tool_Q{prev_quarter}_*_BCC*.xlsx",
+        "spot_curve": f"Spot_curve_central_Q{prev_quarter}_no_va*.xlsx",
+        "spread_input": f"Spreads_tasso_variabile_Q{prev_quarter}_*.xlsx",
+        "inflation_index": f"inflation_index_Q{prev_quarter}_*.xlsx"
+    }
+    files = {}
+    for key, pat in patterns.items():
+        matches = [f for f in glob.glob(os.path.join(INPUTS_DIR, pat)) if "_appoggio" not in os.path.basename(f)]
+        if matches:
+            matches.sort(key=lambda f: os.path.getmtime(f), reverse=True)
+            files[key] = matches[0]
+        else:
+            files[key] = ""
+    return files
 
 # ------------------------
 # GUI
@@ -77,7 +85,7 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Asset Pricing BCC - Repricing Sensi 3.13.7")
-        self.geometry("1000x650")
+        self.geometry("950x600")
         self.resizable(False, False)
 
         # Window icon
@@ -107,6 +115,9 @@ class App(ctk.CTk):
         self.spread_up = ctk.StringVar(value="0.5")
         self.spread_down = ctk.StringVar(value="0.5")
         self.ufr = ctk.StringVar(value="3.3")
+
+        current_quarter = (datetime.date.today().month - 1) // 3 + 1
+        self.selected_quarter = ctk.StringVar(value=f"Q{current_quarter}")
 
         self.container = ctk.CTkFrame(self, corner_radius=12)
         self.container.pack(fill="both", expand=True, padx=2, pady=2)
@@ -162,34 +173,37 @@ class App(ctk.CTk):
             ).grid(row=idx, column=2, padx=2, pady=0)
 
         pr = 4
-        # Valuation date
+        # Numeric entries only
+        validate_numeric = (self.register(lambda P: all(c.isdigit() or c == "." for c in P)), "%P")
+
         ctk.CTkLabel(form_card, text="Valuation date (YYYY-MM-DD)", anchor="w").grid(
             row=pr, column=0, sticky="w", padx=2, pady=0
         )
-        ctk.CTkEntry(form_card, textvariable=self.valuation_date).grid(
+        ctk.CTkEntry(form_card, textvariable=self.valuation_date, validate="key", validatecommand=validate_numeric).grid(
             row=pr, column=1, sticky="ew", padx=2, pady=0
         )
-        # Spread up
+
         ctk.CTkLabel(form_card, text="Spread up", anchor="w").grid(
             row=pr + 1, column=0, sticky="w", padx=2, pady=0
         )
-        ctk.CTkEntry(form_card, textvariable=self.spread_up).grid(
+        ctk.CTkEntry(form_card, textvariable=self.spread_up, validate="key", validatecommand=validate_numeric).grid(
             row=pr + 1, column=1, sticky="ew", padx=2, pady=0
         )
-        # Spread down
+
         ctk.CTkLabel(form_card, text="Spread down", anchor="w").grid(
             row=pr + 2, column=0, sticky="w", padx=2, pady=0
         )
-        ctk.CTkEntry(form_card, textvariable=self.spread_down).grid(
+        ctk.CTkEntry(form_card, textvariable=self.spread_down, validate="key", validatecommand=validate_numeric).grid(
             row=pr + 2, column=1, sticky="ew", padx=2, pady=0
         )
-        # UFR
+
         ctk.CTkLabel(form_card, text="UFR (%)", anchor="w").grid(
             row=pr + 3, column=0, sticky="w", padx=2, pady=0
         )
-        ctk.CTkEntry(form_card, textvariable=self.ufr).grid(
+        ctk.CTkEntry(form_card, textvariable=self.ufr, validate="key", validatecommand=validate_numeric).grid(
             row=pr + 3, column=1, sticky="ew", padx=2, pady=0
         )
+
         # Output directory
         ctk.CTkLabel(form_card, text="Output directory", anchor="w").grid(
             row=pr + 4, column=0, sticky="w", padx=2, pady=0
@@ -209,30 +223,46 @@ class App(ctk.CTk):
             command=self.choose_output
         ).grid(row=pr + 4, column=2, padx=2, pady=0)
 
-        # Run + Reset + Log frame (subito sotto form)
+        # Quarter selector
+        ctk.CTkLabel(form_card, text="Select Quarter", anchor="w").grid(
+            row=pr+5, column=0, sticky="w", padx=2, pady=0
+        )
+        ctk.CTkOptionMenu(
+            form_card,
+            variable=self.selected_quarter,
+            values=["Q1","Q2","Q3","Q4"],
+            command=self.on_quarter_change
+        ).grid(row=pr+5, column=1, sticky="w", padx=2, pady=0)
+
+        # Run + Reset + Log frame
         run_frame = ctk.CTkFrame(self.container, fg_color="transparent")
         run_frame.pack(fill="x", padx=5, pady=(2,2))
 
+        btn_frame = ctk.CTkFrame(run_frame, fg_color="transparent")
+        btn_frame.pack(pady=2)
+
         self.run_btn = ctk.CTkButton(
-            run_frame,
+            btn_frame,
             text="Run Script",
             fg_color="#00A678",
             hover=True,
+            width=150,
             command=self.run_script_thread
         )
-        self.run_btn.pack(fill="x", pady=(2,1))
+        self.run_btn.pack(side="left", padx=5)
 
         self.reset_btn = ctk.CTkButton(
-            run_frame,
+            btn_frame,
             text="Reset Defaults",
             fg_color="#FF6B6B",
             hover=True,
+            width=150,
             command=self.reset_defaults
         )
-        self.reset_btn.pack(fill="x", pady=(1,1))
+        self.reset_btn.pack(side="left", padx=5)
 
         self.log_label = ctk.CTkLabel(run_frame, text="", anchor="nw")
-        self.log_label.pack(fill="x", pady=(1,1), padx=2)
+        self.log_label.pack(fill="x", pady=(2,2), padx=2)
 
     # ------------------------
     # Helpers
@@ -253,19 +283,21 @@ class App(ctk.CTk):
             self.output_directory_display.set(shorten_path(p))
 
     def autofill_inputs(self):
-        self.assets_dataset_path.set(find_most_recent("Asset_tool_Q*_BCC*.xlsx", "_appoggio"))
-        self.spot_curve_path.set(find_most_recent("Spot_curve_central_Q*_no_va*.xlsx"))
-        self.spread_input_path.set(find_most_recent("Spreads_tasso_variabile_Q*.xlsx"))
-        self.inflation_index_path.set(find_most_recent("inflation_index_Q*.xlsx"))
+        self.on_quarter_change(self.selected_quarter.get())
 
-        self.assets_dataset_path_display.set(shorten_path(self.assets_dataset_path.get()))
-        self.spot_curve_path_display.set(shorten_path(self.spot_curve_path.get()))
-        self.spread_input_path_display.set(shorten_path(self.spread_input_path.get()))
-        self.inflation_index_path_display.set(shorten_path(self.inflation_index_path.get()))
-        self.output_directory_display.set(shorten_path(self.output_directory.get()))
+    def on_quarter_change(self, value):
+        q = int(value[1])
+        files = get_prev_quarter_files_for_selected(q)
+        self.assets_dataset_path.set(files["assets_dataset"])
+        self.assets_dataset_path_display.set(shorten_path(files["assets_dataset"]))
+        self.spot_curve_path.set(files["spot_curve"])
+        self.spot_curve_path_display.set(shorten_path(files["spot_curve"]))
+        self.spread_input_path.set(files["spread_input"])
+        self.spread_input_path_display.set(shorten_path(files["spread_input"]))
+        self.inflation_index_path.set(files["inflation_index"])
+        self.inflation_index_path_display.set(shorten_path(files["inflation_index"]))
 
     def reset_defaults(self):
-        """Reset dei valori di default nei campi precompilati"""
         self.valuation_date.set(valuation_date_default())
         self.spread_up.set("0.5")
         self.spread_down.set("0.5")
@@ -273,12 +305,11 @@ class App(ctk.CTk):
 
     def validate_inputs(self):
         try:
-            datetime.datetime.strptime(self.valuation_date.get(), "%Y-%m-%d")
             float(self.spread_up.get())
             float(self.spread_down.get())
             float(self.ufr.get())
         except:
-            messagebox.showerror("Error", "Check date and numeric fields")
+            messagebox.showerror("Error", "Check numeric fields")
             return False
         if not self.assets_dataset_path.get() or not self.spot_curve_path.get():
             messagebox.showerror("Error", "Required files missing")
@@ -294,7 +325,7 @@ class App(ctk.CTk):
         def target():
             try:
                 self.run_script()
-                self.log_label.configure(text="Script eseguito correttamente ✅")
+                self.log_label.configure(text="Script eseguito ✅")
             except Exception as e:
                 self.log_label.configure(text="Script FAILED ❌")
                 tb = traceback.format_exc()
