@@ -1,13 +1,1 @@
-import pandas as pd
-
-# nome del file Excel
-output_file = 'i_s2at_merged.xlsx'
-
-# apri ExcelWriter
-with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-    for k, df in i_s2at_merged.items():
-        # i nomi dei fogli devono essere <=31 caratteri
-        sheet_name = str(k)[:31]
-        df.to_excel(writer, sheet_name=sheet_name, index=False)
-
-print(f"Tutti i DataFrame salvati in {output_file}")
+doc.write('\n'.join(trans_data[sofia_data['COC_FND'] == funds[i]]) + '\n')
