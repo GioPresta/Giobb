@@ -1,5 +1,1 @@
-=MID(A1,
-     FIND("_",A1)+1,
-     FIND("§",SUBSTITUTE(A1,"_","§",
-     LEN(A1)-LEN(SUBSTITUTE(A1,"_",""))))
-     - FIND("_",A1) -1)
+=MID(A1,FIND("_",A1)+1,FIND("§",SUBSTITUTE(A1,"_","§",LEN(A1)-LEN(SUBSTITUTE(A1,"_",""))))-FIND("_",A1)-1)
