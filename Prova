@@ -126,7 +126,7 @@ def process_econ_files(folder_path):
         with open(file_path, 'w', encoding=enc, newline='') as f:
             f.write(cleaned_content)
 
-        log(f"[OK] {filename} modificato e salvato.")
+        log(f"[OK] {filename} modificato e salvato con fine riga \\r\\n.")
 
     log("=" * 60)
     log("FINE ELABORAZIONE FILE ECON")
@@ -163,7 +163,7 @@ def process_assets_equity(folder_path):
     is_bcc = "BCC" in basename
 
     log(f"[FILE] Trovato: {basename}")
-    log(f"[INFO] Rimozione righe _UL: {'SÌ (file BCC)' if is_bcc else 'NO (file standard)'}")
+    log(f"[INFO] Modalità: {'BCC → rimozione righe _UL' if is_bcc else 'Standard → _UL mantenute, REDEMP_YEAR=999 e RATING=0 se vuoto'}")
 
     content, enc = read_file_safely(file_path)
     log(f"[INFO] Encoding rilevato: {enc}")
@@ -182,11 +182,17 @@ def process_assets_equity(folder_path):
     except ValueError:
         raise Exception("Colonne NAME o REDEMP_YEAR non trovate nell'header")
 
-    log(f"[INFO] Colonna NAME all'indice {name_index}, REDEMP_YEAR all'indice {redemp_index}")
+    try:
+        rating_index = header_fields.index("RATING")
+    except ValueError:
+        raise Exception("Colonna RATING non trovata nell'header")
+
+    log(f"[INFO] Colonna NAME all'indice {name_index}, REDEMP_YEAR all'indice {redemp_index}, RATING all'indice {rating_index}")
 
     output_lines = [lines[0]]
     removed_ul = 0
     redemp_modified = 0
+    rating_modified = 0
 
     for line_num, raw_line in enumerate(lines[1:], start=2):
 
@@ -200,29 +206,43 @@ def process_assets_equity(folder_path):
             log(f"[WARN] Riga {line_num} ignorata (campi insufficienti): '{raw_line}'")
             continue
 
-        if is_bcc and fields[name_index].endswith("_UL"):
+        is_ul = fields[name_index].endswith("_UL")
+
+        # Modalità BCC: elimina righe _UL
+        if is_bcc and is_ul:
             removed_ul += 1
             log(f"[RIMOSSA] Riga {line_num} (NAME='{fields[name_index]}'): '{raw_line}'")
             continue
 
+        parts = raw_line.split(",")
+
+        # REDEMP_YEAR → 999 sempre (anche su _UL nel caso non-BCC)
         if fields[redemp_index] != "999":
             old_val = fields[redemp_index]
-            parts = raw_line.split(",")
             parts[redemp_index] = "999"
-            raw_line = ",".join(parts)
             redemp_modified += 1
             log(f"[REDEMP] Riga {line_num} (NAME='{fields[name_index]}'): REDEMP_YEAR {old_val} → 999")
 
+        # RATING → 0 se vuoto (solo file non-BCC)
+        if not is_bcc:
+            if rating_index < len(parts) and parts[rating_index].strip() == "":
+                parts[rating_index] = "0"
+                rating_modified += 1
+                log(f"[RATING] Riga {line_num} (NAME='{fields[name_index]}'): RATING vuoto → 0")
+
+        raw_line = ",".join(parts)
         output_lines.append(raw_line)
 
-    if removed_ul > 0 or redemp_modified > 0:
+    if removed_ul > 0 or redemp_modified > 0 or rating_modified > 0:
         with open(file_path, 'w', encoding=enc, newline='') as f:
             f.write('\r\n'.join(output_lines))
         log("-" * 60)
         if is_bcc:
             log(f"[OK] Righe _UL eliminate: {removed_ul}")
         log(f"[OK] REDEMP_YEAR modificati: {redemp_modified}")
-        log(f"[OK] File salvato.")
+        if not is_bcc:
+            log(f"[OK] RATING impostati a 0: {rating_modified}")
+        log(f"[OK] File salvato con fine riga \\r\\n.")
     else:
         log("[SKIP] Nessuna modifica necessaria → file già processato.")
 
@@ -232,56 +252,7 @@ def process_assets_equity(folder_path):
 
 
 # =========================
-# RIPARA FINE RIGA
-# =========================
-def repair_line_endings(folder_path):
-
-    log("")
-    log("=" * 60)
-    log("INIZIO RIPARAZIONE FINE RIGA (→ \\r\\n)")
-    log("=" * 60)
-
-    target_files = [
-        "ECON_CENTRAL.fac",
-        "ECON_DW.fac",
-        "ECON_UP.fac",
-        "ASSETS_EQUITY.fac",
-        "A_BCCV_ASSETS_EQUITY.fac"
-    ]
-
-    found_any = False
-
-    for filename in target_files:
-        file_path = os.path.join(folder_path, filename)
-
-        if not os.path.exists(file_path):
-            continue
-
-        found_any = True
-        content, enc = read_file_safely(file_path)
-
-        if '\r\n' in content:
-            log(f"[SKIP] {filename}: fine riga già \\r\\n, nessuna modifica.")
-            continue
-
-        lines = content.splitlines()
-        fixed = '\r\n'.join(lines)
-
-        with open(file_path, 'w', encoding=enc, newline='') as f:
-            f.write(fixed)
-
-        log(f"[OK] {filename}: convertito \\n → \\r\\n ({len(lines)} righe)")
-
-    if not found_any:
-        log("[SKIP] Nessun file target trovato nella cartella.")
-
-    log("=" * 60)
-    log("FINE RIPARAZIONE")
-    log("=" * 60)
-
-
-# =========================
-# RUN PROCESS
+# RUN
 # =========================
 def run_process():
     folder = folder_path.get()
@@ -304,33 +275,11 @@ def run_process():
 
 
 # =========================
-# RUN REPAIR
-# =========================
-def run_repair():
-    folder = folder_path.get()
-    if not folder:
-        messagebox.showerror("Errore", "Seleziona una cartella.")
-        return
-
-    log_box.delete(1.0, tk.END)
-    log(f"Cartella selezionata: {folder}")
-    log(f"Avvio riparazione fine riga...\n")
-
-    try:
-        repair_line_endings(folder)
-        log("")
-        log("✔ Riparazione completata con successo.")
-    except Exception as e:
-        log(f"\n[ERRORE] {str(e)}")
-        messagebox.showerror("Errore", str(e))
-
-
-# =========================
 # GUI
 # =========================
 root = tk.Tk()
 root.title("APT Output Tool")
-root.geometry("750x580")
+root.geometry("750x550")
 root.resizable(False, False)
 
 folder_path = tk.StringVar()
@@ -344,22 +293,12 @@ tk.Entry(frame, textvariable=folder_path, width=70).pack(side=tk.LEFT, padx=5)
 tk.Button(frame, text="Browse",
           command=lambda: folder_path.set(filedialog.askdirectory())).pack(side=tk.LEFT)
 
-btn_frame = tk.Frame(root)
-btn_frame.pack(pady=10)
-
-tk.Button(btn_frame, text="Esegui",
+tk.Button(root, text="Esegui",
           command=run_process,
           bg="green",
           fg="white",
           width=25,
-          height=2).pack(side=tk.LEFT, padx=10)
-
-tk.Button(btn_frame, text="Ripara Fine Riga",
-          command=run_repair,
-          bg="steelblue",
-          fg="white",
-          width=25,
-          height=2).pack(side=tk.LEFT, padx=10)
+          height=2).pack(pady=10)
 
 log_box = scrolledtext.ScrolledText(root, width=90, height=22, font=("Courier", 9))
 log_box.pack(pady=10)
