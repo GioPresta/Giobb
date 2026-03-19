@@ -1,554 +1,367 @@
-"""
-Meeting Recorder - Registra schermo + audio (microfono O audio di sistema)
-Requisiti:
-    pip install mss opencv-python pyaudiowpatch numpy imageio-ffmpeg
-    (PyAudioWPatch include WASAPI loopback per catturare audio interno Windows)
-"""
-
-import tkinter as tk
-from tkinter import filedialog, messagebox
-import threading
-import time
 import os
-import datetime
-import subprocess
-import shutil
-import wave
+import csv
+import glob
+import tkinter as tk
+from tkinter import filedialog, messagebox, scrolledtext
 
-# ─── Import dipendenze ────────────────────────────────────────────
-DEPS_OK    = True
-MISSING    = ""
-HAS_WPATCH = False
 
-try:
-    import cv2
-    import numpy as np
-    import mss
-    import imageio_ffmpeg
-except ImportError as e:
-    DEPS_OK = False
-    MISSING = str(e)
+# =========================
+# LOG FUNCTION
+# =========================
+def log(message):
+    log_box.insert(tk.END, message + "\n")
+    log_box.see(tk.END)
+    root.update_idletasks()
 
-# Prova PyAudioWPatch (WASAPI loopback), fallback a pyaudio normale
-try:
-    import pyaudiowpatch as pyaudio
-    HAS_WPATCH = True
-except ImportError:
+
+# =========================
+# LETTURA SICURA
+# =========================
+def read_file_safely(file_path):
+    encodings = ["utf-8", "cp1252", "latin-1"]
+    for enc in encodings:
+        try:
+            with open(file_path, 'r', encoding=enc) as f:
+                return f.read(), enc
+        except UnicodeDecodeError:
+            continue
+    raise Exception(f"Impossibile leggere il file: {file_path}")
+
+
+# =========================
+# PULIZIA END
+# =========================
+def clean_after_end(content):
+    lines = content.splitlines()
+    cleaned = []
+    removed_lines = []
+    found_end = False
+
+    for line in lines:
+        if "END" in line:
+            found_end = True
+            continue
+        if found_end:
+            removed_lines.append(line)
+        else:
+            cleaned.append(line)
+
+    return '\r\n'.join(cleaned), found_end, removed_lines
+
+
+# =========================
+# PROCESS ECON FILES
+# =========================
+def process_econ_files(folder_path):
+
+    log("=" * 60)
+    log("INIZIO ELABORAZIONE FILE ECON")
+    log("=" * 60)
+
+    rename_map = {
+        "ECON_CENTRAL": "ECON_CENTRAL.fac",
+        "ECON_IR_DOWN": "ECON_DW.fac",
+        "ECON_IR_UP":   "ECON_UP.fac",
+    }
+
+    for prefix, target_name in rename_map.items():
+        target_path = os.path.join(folder_path, target_name)
+
+        if os.path.exists(target_path):
+            log(f"[RENAME] {target_name} già presente, nessuna ridenominazione necessaria.")
+            continue
+
+        matches = glob.glob(os.path.join(folder_path, f"{prefix}*.fac"))
+
+        if not matches:
+            log(f"[RENAME] Nessun file trovato con prefisso '{prefix}'")
+            continue
+
+        if len(matches) > 1:
+            log(f"[RENAME] ATTENZIONE: trovati più file con prefisso '{prefix}':")
+            for m in matches:
+                log(f"         - {os.path.basename(m)}")
+            log(f"         Rinominazione saltata per evitare errori.")
+            continue
+
+        original_name = os.path.basename(matches[0])
+        os.replace(matches[0], target_path)
+        log(f"[RENAME] '{original_name}' → '{target_name}'")
+
+    econ_files = ["ECON_CENTRAL.fac", "ECON_DW.fac", "ECON_UP.fac"]
+
+    for filename in econ_files:
+        log("-" * 60)
+        log(f"[FILE] Elaborazione: {filename}")
+
+        file_path = os.path.join(folder_path, filename)
+
+        if not os.path.exists(file_path):
+            log(f"[SKIP] {filename} non trovato nella cartella.")
+            continue
+
+        content, enc = read_file_safely(file_path)
+        log(f"[INFO] Encoding rilevato: {enc}")
+
+        if "A_EURO" not in content:
+            log(f"[SKIP] A_EURO non presente → file già processato, nessuna modifica.")
+            continue
+
+        count_euro = content.count("A_EURO")
+        log(f"[MODIFICA] Trovate {count_euro} occorrenza/e di 'A_EURO' → sostituzione con '*'")
+        content = content.replace("A_EURO", "*")
+
+        cleaned_content, found_end, removed_lines = clean_after_end(content)
+
+        if found_end:
+            log(f"[END] Trovata riga 'END' → eliminate {len(removed_lines)} righe successive:")
+            if removed_lines:
+                for i, rl in enumerate(removed_lines, 1):
+                    log(f"      Riga {i}: '{rl}'")
+            else:
+                log("      (nessuna riga dopo END)")
+        else:
+            log(f"[END] Nessuna riga 'END' trovata → contenuto invariato")
+
+        with open(file_path, 'w', encoding=enc, newline='') as f:
+            f.write(cleaned_content)
+
+        log(f"[OK] {filename} modificato e salvato.")
+
+    log("=" * 60)
+    log("FINE ELABORAZIONE FILE ECON")
+    log("=" * 60)
+
+
+# =========================
+# PROCESS ASSETS_EQUITY
+# =========================
+def process_assets_equity(folder_path):
+
+    log("")
+    log("=" * 60)
+    log("INIZIO ELABORAZIONE ASSETS_EQUITY")
+    log("=" * 60)
+
+    possible_files = [
+        "ASSETS_EQUITY.fac",
+        "A_BCCV_ASSETS_EQUITY.fac"
+    ]
+
+    file_path = None
+    for fname in possible_files:
+        candidate = os.path.join(folder_path, fname)
+        if os.path.exists(candidate):
+            file_path = candidate
+            break
+
+    if not file_path:
+        log("[SKIP] Nessun file ASSETS_EQUITY trovato.")
+        return
+
+    basename = os.path.basename(file_path)
+    is_bcc = "BCC" in basename
+
+    log(f"[FILE] Trovato: {basename}")
+    log(f"[INFO] Rimozione righe _UL: {'SÌ (file BCC)' if is_bcc else 'NO (file standard)'}")
+
+    content, enc = read_file_safely(file_path)
+    log(f"[INFO] Encoding rilevato: {enc}")
+
+    lines = content.splitlines()
+
+    if not lines:
+        log("[SKIP] File vuoto.")
+        return
+
+    header_fields = next(csv.reader([lines[0]]))
+
     try:
-        import pyaudio
-    except ImportError as e:
-        DEPS_OK = False
-        MISSING = MISSING or str(e)
+        name_index = header_fields.index("NAME")
+        redemp_index = header_fields.index("REDEMP_YEAR")
+    except ValueError:
+        raise Exception("Colonne NAME o REDEMP_YEAR non trovate nell'header")
+
+    log(f"[INFO] Colonna NAME all'indice {name_index}, REDEMP_YEAR all'indice {redemp_index}")
+
+    output_lines = [lines[0]]
+    removed_ul = 0
+    redemp_modified = 0
+
+    for line_num, raw_line in enumerate(lines[1:], start=2):
+
+        if not raw_line.strip():
+            output_lines.append(raw_line)
+            continue
+
+        fields = next(csv.reader([raw_line]))
+
+        if len(fields) <= max(name_index, redemp_index):
+            log(f"[WARN] Riga {line_num} ignorata (campi insufficienti): '{raw_line}'")
+            continue
+
+        if is_bcc and fields[name_index].endswith("_UL"):
+            removed_ul += 1
+            log(f"[RIMOSSA] Riga {line_num} (NAME='{fields[name_index]}'): '{raw_line}'")
+            continue
+
+        if fields[redemp_index] != "999":
+            old_val = fields[redemp_index]
+            parts = raw_line.split(",")
+            parts[redemp_index] = "999"
+            raw_line = ",".join(parts)
+            redemp_modified += 1
+            log(f"[REDEMP] Riga {line_num} (NAME='{fields[name_index]}'): REDEMP_YEAR {old_val} → 999")
+
+        output_lines.append(raw_line)
+
+    if removed_ul > 0 or redemp_modified > 0:
+        with open(file_path, 'w', encoding=enc, newline='') as f:
+            f.write('\r\n'.join(output_lines))
+        log("-" * 60)
+        if is_bcc:
+            log(f"[OK] Righe _UL eliminate: {removed_ul}")
+        log(f"[OK] REDEMP_YEAR modificati: {redemp_modified}")
+        log(f"[OK] File salvato.")
+    else:
+        log("[SKIP] Nessuna modifica necessaria → file già processato.")
+
+    log("=" * 60)
+    log("FINE ELABORAZIONE ASSETS_EQUITY")
+    log("=" * 60)
 
 
-# ─── Colori e stile ───────────────────────────────────────────────
-BG       = "#0f1117"
-PANEL    = "#1a1d27"
-BORDER   = "#2a2d3e"
-RED      = "#e53e3e"
-RED_DARK = "#c53030"
-GREEN    = "#38a169"
-BLUE     = "#4299e1"
-AMBER    = "#d69e2e"
-GRAY     = "#718096"
-WHITE    = "#f7fafc"
-MUTED    = "#a0aec0"
-FONT     = "Segoe UI"
+# =========================
+# RIPARA FINE RIGA
+# =========================
+def repair_line_endings(folder_path):
+
+    log("")
+    log("=" * 60)
+    log("INIZIO RIPARAZIONE FINE RIGA (→ \\r\\n)")
+    log("=" * 60)
+
+    target_files = [
+        "ECON_CENTRAL.fac",
+        "ECON_DW.fac",
+        "ECON_UP.fac",
+        "ASSETS_EQUITY.fac",
+        "A_BCCV_ASSETS_EQUITY.fac"
+    ]
+
+    found_any = False
+
+    for filename in target_files:
+        file_path = os.path.join(folder_path, filename)
+
+        if not os.path.exists(file_path):
+            continue
+
+        found_any = True
+        content, enc = read_file_safely(file_path)
+
+        if '\r\n' in content:
+            log(f"[SKIP] {filename}: fine riga già \\r\\n, nessuna modifica.")
+            continue
+
+        lines = content.splitlines()
+        fixed = '\r\n'.join(lines)
+
+        with open(file_path, 'w', encoding=enc, newline='') as f:
+            f.write(fixed)
+
+        log(f"[OK] {filename}: convertito \\n → \\r\\n ({len(lines)} righe)")
+
+    if not found_any:
+        log("[SKIP] Nessun file target trovato nella cartella.")
+
+    log("=" * 60)
+    log("FINE RIPARAZIONE")
+    log("=" * 60)
 
 
-# ─── Utility: elenca dispositivi audio ───────────────────────────
+# =========================
+# RUN PROCESS
+# =========================
+def run_process():
+    folder = folder_path.get()
+    if not folder:
+        messagebox.showerror("Errore", "Seleziona una cartella.")
+        return
 
-def _list_audio_devices():
-    """
-    Restituisce due liste:
-      - mic_devices:      [(idx, nome)]  dispositivi INPUT (microfono)
-      - loopback_devices: [(idx, nome)]  dispositivi LOOPBACK (audio sistema)
-    """
-    mic_devices      = []
-    loopback_devices = []
+    log_box.delete(1.0, tk.END)
+    log(f"Cartella selezionata: {folder}")
+    log(f"Avvio processo...\n")
 
-    if not DEPS_OK:
-        return mic_devices, loopback_devices
-
-    p = pyaudio.PyAudio()
     try:
-        for i in range(p.get_device_count()):
-            try:
-                info = p.get_device_info_by_index(i)
-            except Exception:
-                continue
-
-            name        = info.get("name", f"Device {i}")
-            is_input    = info.get("maxInputChannels", 0) > 0
-            is_loopback = info.get("isLoopbackDevice", False)  # solo PyAudioWPatch
-
-            if is_loopback:
-                loopback_devices.append((i, name))
-            elif is_input:
-                mic_devices.append((i, name))
-    finally:
-        p.terminate()
-
-    return mic_devices, loopback_devices
-
-
-# ─── Classe principale ────────────────────────────────────────────
-
-class MeetingRecorder:
-
-    def __init__(self, root: tk.Tk):
-        self.root = root
-        self.root.title("Meeting Recorder")
-        self.root.resizable(False, False)
-        self.root.configure(bg=BG)
-
-        self.recording  = False
-        self.start_time = 0.0
-        self.save_dir   = (
-            os.path.expanduser("~\\Videos") if os.name == "nt"
-            else os.path.expanduser("~/Videos")
-        )
-        if not os.path.isdir(self.save_dir):
-            self.save_dir = os.path.expanduser("~")
-
-        self._video_path  = ""
-        self._audio_path  = ""
-        self._output_path = ""
-        self._audio_dev_idx = 0
-        self._is_loopback   = False
-        self._audio_error   = ""
-        self._video_thread  = None
-        self._audio_thread  = None
-        self._stop_evt      = threading.Event()
-
-        # ffmpeg
-        try:
-            self._ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
-        except Exception:
-            self._ffmpeg = shutil.which("ffmpeg") or shutil.which("ffmpeg.exe")
-
-        # Dispositivi audio
-        self._mic_devices, self._loopback_devices = _list_audio_devices()
-
-        self._build_ui()
-
-        if not DEPS_OK:
-            self._show_deps_error()
-
-    # ─── UI ───────────────────────────────────────────────────────
-
-    def _build_ui(self):
-        # ── Header ──
-        header = tk.Frame(self.root, bg=BG)
-        header.pack(fill="x", padx=24, pady=(24, 8))
-        tk.Label(header, text="⏺", font=(FONT, 28), bg=BG, fg=RED).pack(side="left")
-        tk.Label(header, text=" Meeting Recorder",
-                 font=(FONT, 20, "bold"), bg=BG, fg=WHITE).pack(side="left")
-
-        # ── Cartella ──
-        box = self._card()
-        tk.Label(box, text="📁  Cartella di salvataggio",
-                 font=(FONT, 9, "bold"), bg=PANEL, fg=MUTED).pack(anchor="w", pady=(14, 4))
-
-        row = tk.Frame(box, bg=PANEL)
-        row.pack(fill="x", pady=(0, 12))
-
-        self._dir_var = tk.StringVar(value=self.save_dir)
-        tk.Entry(row, textvariable=self._dir_var,
-                 font=(FONT, 10), bg=BORDER, fg=WHITE,
-                 insertbackground=WHITE, relief="flat",
-                 readonlybackground=BORDER, state="readonly",
-                 width=36).pack(side="left", fill="x", expand=True, ipady=7, padx=(0, 8))
-        tk.Button(row, text="Sfoglia…",
-                  font=(FONT, 10), bg=BLUE, fg=WHITE,
-                  relief="flat", cursor="hand2", padx=12,
-                  activebackground="#2b6cb0", activeforeground=WHITE,
-                  command=self._choose_dir).pack(side="left", ipady=5)
-
-        # ── Nome file ──
-        tk.Label(box, text="📝  Nome file  (vuoto = data/ora automatica)",
-                 font=(FONT, 9, "bold"), bg=PANEL, fg=MUTED).pack(anchor="w", pady=(0, 4))
-        self._name_var = tk.StringVar()
-        tk.Entry(box, textvariable=self._name_var,
-                 font=(FONT, 10), bg=BORDER, fg=WHITE,
-                 insertbackground=WHITE, relief="flat"
-                 ).pack(fill="x", ipady=7, pady=(0, 14))
-
-        # ── Monitor + FPS ──
-        tk.Label(box, text="🖥️  Monitor",
-                 font=(FONT, 9, "bold"), bg=PANEL, fg=MUTED).pack(anchor="w", pady=(0, 4))
-        mon_row = tk.Frame(box, bg=PANEL)
-        mon_row.pack(fill="x", pady=(0, 14))
-
-        self._monitor_var = tk.IntVar(value=1)
-        try:
-            with mss.mss() as sct:
-                n = len(sct.monitors) - 1
-        except Exception:
-            n = 1
-
-        om = tk.OptionMenu(mon_row, self._monitor_var, *range(1, n + 1))
-        om.config(font=(FONT, 10), bg=BORDER, fg=WHITE,
-                  activebackground=BORDER, activeforeground=WHITE,
-                  relief="flat", highlightthickness=0)
-        om["menu"].config(bg=BORDER, fg=WHITE, font=(FONT, 10))
-        om.pack(side="left")
-
-        tk.Label(mon_row, text="   FPS:", font=(FONT, 9, "bold"),
-                 bg=PANEL, fg=MUTED).pack(side="left")
-        self._fps_var = tk.IntVar(value=15)
-        tk.Spinbox(mon_row, from_=5, to=30, textvariable=self._fps_var,
-                   font=(FONT, 10), bg=BORDER, fg=WHITE, relief="flat",
-                   width=4, buttonbackground=BORDER,
-                   insertbackground=WHITE).pack(side="left", padx=(6, 0), ipady=4)
-
-        # ── Sorgente Audio ──────────────────────────────────────────
-        audio_box = self._card()
-
-        tk.Label(audio_box, text="🎧  Sorgente audio",
-                 font=(FONT, 9, "bold"), bg=PANEL, fg=MUTED).pack(anchor="w", pady=(14, 8))
-
-        self._audio_mode = tk.StringVar(
-            value="loopback" if (HAS_WPATCH and self._loopback_devices) else "mic"
-        )
-
-        radio_row = tk.Frame(audio_box, bg=PANEL)
-        radio_row.pack(fill="x", pady=(0, 8))
-
-        self._rb_loopback = tk.Radiobutton(
-            radio_row,
-            text="🔊  Audio di sistema  (Teams, voce di tutti + suoni PC)",
-            variable=self._audio_mode, value="loopback",
-            font=(FONT, 10), bg=PANEL, fg=WHITE,
-            selectcolor=BORDER, activebackground=PANEL,
-            activeforeground=WHITE, cursor="hand2",
-            command=self._on_audio_mode_change
-        )
-        self._rb_loopback.pack(anchor="w")
-
-        self._rb_mic = tk.Radiobutton(
-            radio_row,
-            text="🎤  Microfono  (solo tua voce)",
-            variable=self._audio_mode, value="mic",
-            font=(FONT, 10), bg=PANEL, fg=WHITE,
-            selectcolor=BORDER, activebackground=PANEL,
-            activeforeground=WHITE, cursor="hand2",
-            command=self._on_audio_mode_change
-        )
-        self._rb_mic.pack(anchor="w", pady=(4, 0))
-
-        # Avviso se PyAudioWPatch non installato
-        if not HAS_WPATCH:
-            tk.Label(
-                audio_box,
-                text="⚠️  Per audio di sistema installa:\n"
-                     "     pip install pyaudiowpatch",
-                font=(FONT, 8), bg=PANEL, fg=AMBER,
-                justify="left"
-            ).pack(anchor="w", pady=(2, 4))
-            self._rb_loopback.config(state="disabled", fg=GRAY)
-
-        # Dropdown dispositivo
-        self._audio_device_map = {}
-        self._dev_menu_var = tk.StringVar()
-
-        tk.Label(audio_box, text="Dispositivo:",
-                 font=(FONT, 9, "bold"), bg=PANEL, fg=MUTED).pack(anchor="w", pady=(8, 2))
-
-        self._dev_option = tk.OptionMenu(audio_box, self._dev_menu_var, "")
-        self._dev_option.config(font=(FONT, 10), bg=BORDER, fg=WHITE,
-                                activebackground=BORDER, activeforeground=WHITE,
-                                relief="flat", highlightthickness=0, width=44)
-        self._dev_option["menu"].config(bg=BORDER, fg=WHITE, font=(FONT, 10))
-        self._dev_option.pack(anchor="w", pady=(0, 14))
-
-        self._populate_device_menu()
-
-        # ── Timer ──
-        timer_frame = tk.Frame(self.root, bg=BG)
-        timer_frame.pack(pady=(10, 4))
-
-        self._timer_lbl = tk.Label(timer_frame, text="00:00",
-                                    font=(FONT, 40, "bold"), bg=BG, fg=BORDER)
-        self._timer_lbl.pack()
-
-        self._status_lbl = tk.Label(timer_frame, text="In attesa…",
-                                     font=(FONT, 11), bg=BG, fg=GRAY)
-        self._status_lbl.pack()
-
-        # ── Progress bar ──
-        self._prog_canvas = tk.Canvas(self.root, bg=BG, height=4,
-                                       width=400, highlightthickness=0)
-        self._prog_canvas.pack()
-        self._prog_bar = self._prog_canvas.create_rectangle(0, 0, 0, 4, fill=RED, outline="")
-
-        # ── Bottoni ──
-        btn_frame = tk.Frame(self.root, bg=BG)
-        btn_frame.pack(pady=16)
-
-        self._start_btn = tk.Button(
-            btn_frame, text="  ▶  Avvia registrazione",
-            font=(FONT, 13, "bold"), bg=GREEN, fg=WHITE,
-            relief="flat", cursor="hand2", padx=22,
-            activebackground="#276749", activeforeground=WHITE,
-            command=self.start_recording
-        )
-        self._start_btn.pack(side="left", ipady=10, padx=(0, 10))
-
-        self._stop_btn = tk.Button(
-            btn_frame, text="  ■  Ferma",
-            font=(FONT, 13, "bold"), bg=BORDER, fg=MUTED,
-            relief="flat", cursor="arrow", padx=22,
-            activebackground=RED_DARK, activeforeground=WHITE,
-            state="disabled", command=self.stop_recording
-        )
-        self._stop_btn.pack(side="left", ipady=10)
-
-        tk.Label(self.root,
-                 text="Output: MP4  ·  Audio: AAC  ·  Video: H.264  ·  ffmpeg via imageio-ffmpeg",
-                 font=(FONT, 8), bg=BG, fg=GRAY).pack(pady=(0, 14))
-
-    def _card(self, **kw):
-        defaults = dict(padx=24, pady=4, fill="x")
-        defaults.update(kw)
-        f = tk.Frame(self.root, bg=PANEL,
-                     highlightbackground=BORDER, highlightthickness=1)
-        f.pack(**defaults)
-        return f
-
-    # ─── Audio device selector ────────────────────────────────────
-
-    def _on_audio_mode_change(self):
-        self._populate_device_menu()
-
-    def _populate_device_menu(self):
-        mode    = self._audio_mode.get()
-        devices = self._loopback_devices if mode == "loopback" else self._mic_devices
-
-        menu = self._dev_option["menu"]
-        menu.delete(0, "end")
-        self._audio_device_map = {}
-
-        if not devices:
-            msg = ("Nessun dispositivo loopback — installa PyAudioWPatch"
-                   if mode == "loopback" else "Nessun microfono trovato")
-            self._dev_menu_var.set(msg)
-            return
-
-        for idx, name in devices:
-            label = name[:58]
-            self._audio_device_map[label] = idx
-            menu.add_command(label=label,
-                             command=lambda l=label: self._dev_menu_var.set(l))
-
-        self._dev_menu_var.set(devices[0][1][:58])
-
-    def _get_selected_device_index(self):
-        return self._audio_device_map.get(self._dev_menu_var.get())
-
-    # ─── Azioni ───────────────────────────────────────────────────
-
-    def _choose_dir(self):
-        d = filedialog.askdirectory(initialdir=self.save_dir, title="Scegli cartella")
-        if d:
-            self.save_dir = d
-            self._dir_var.set(d)
-
-    def start_recording(self):
-        if not DEPS_OK:
-            self._show_deps_error()
-            return
-        if not self._ffmpeg:
-            messagebox.showerror("ffmpeg non trovato",
-                                 "pip install imageio-ffmpeg")
-            return
-
-        dev_idx = self._get_selected_device_index()
-        if dev_idx is None:
-            messagebox.showerror("Nessun dispositivo audio",
-                                 "Seleziona un dispositivo audio prima di avviare.")
-            return
-
-        ts   = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        name = self._name_var.get().strip() or f"meeting_{ts}"
-        name = "".join(c for c in name if c not in r'\/:*?"<>|')
-
-        self._video_path    = os.path.join(self.save_dir, f"_{name}_raw.avi")
-        self._audio_path    = os.path.join(self.save_dir, f"_{name}_raw.wav")
-        self._output_path   = os.path.join(self.save_dir, f"{name}.mp4")
-        self._audio_dev_idx = dev_idx
-        self._is_loopback   = (self._audio_mode.get() == "loopback")
-        self._audio_error   = ""
-
-        self._stop_evt.clear()
-        self.recording  = True
-        self.start_time = time.time()
-
-        self._video_thread = threading.Thread(target=self._record_screen, daemon=True)
-        self._audio_thread = threading.Thread(target=self._record_audio,  daemon=True)
-        self._video_thread.start()
-        self._audio_thread.start()
-
-        self._start_btn.config(state="disabled", cursor="arrow")
-        self._stop_btn.config(state="normal", bg=RED, fg=WHITE, cursor="hand2")
-        self._rb_loopback.config(state="disabled")
-        self._rb_mic.config(state="disabled")
-        self._dev_option.config(state="disabled")
-        self._status_lbl.config(text="● Registrazione in corso…", fg=RED)
-        self._timer_lbl.config(fg=WHITE)
-        self._update_timer()
-
-    def stop_recording(self):
-        self.recording = False
-        self._stop_evt.set()
-        self._stop_btn.config(state="disabled", bg=BORDER, fg=MUTED, cursor="arrow")
-        self._status_lbl.config(text="⏳ Elaborazione…", fg=BLUE)
-        threading.Thread(target=self._finalize, daemon=True).start()
-
-    def _finalize(self):
-        for t in (self._video_thread, self._audio_thread):
-            if t:
-                t.join(timeout=15)
-        self._merge()
-
-    # ─── Registrazione schermo ────────────────────────────────────
-
-    def _record_screen(self):
-        fps      = self._fps_var.get()
-        mon_idx  = self._monitor_var.get()
-        interval = 1.0 / fps
-
-        with mss.mss() as sct:
-            monitor = sct.monitors[mon_idx]
-            w, h    = monitor["width"], monitor["height"]
-            fourcc  = cv2.VideoWriter_fourcc(*"XVID")
-            out     = cv2.VideoWriter(self._video_path, fourcc, fps, (w, h))
-
-            while not self._stop_evt.is_set():
-                t0    = time.perf_counter()
-                img   = sct.grab(monitor)
-                frame = np.array(img)
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
-                out.write(frame)
-                rem = interval - (time.perf_counter() - t0)
-                if rem > 0:
-                    time.sleep(rem)
-
-            out.release()
-
-    # ─── Registrazione audio ──────────────────────────────────────
-
-    def _record_audio(self):
-        CHUNK  = 1024
-        FORMAT = pyaudio.paInt16
-
-        p = pyaudio.PyAudio()
-        frames   = []
-        CHANNELS = 2
-        RATE     = 44100
-
-        try:
-            info     = p.get_device_info_by_index(self._audio_dev_idx)
-            CHANNELS = min(int(info.get("maxInputChannels", 2)), 2) or 1
-            RATE     = int(info.get("defaultSampleRate", 44100))
-
-            stream = p.open(
-                format=FORMAT,
-                channels=CHANNELS,
-                rate=RATE,
-                input=True,
-                input_device_index=self._audio_dev_idx,
-                frames_per_buffer=CHUNK
-            )
-
-            while not self._stop_evt.is_set():
-                data = stream.read(CHUNK, exception_on_overflow=False)
-                frames.append(data)
-
-            stream.stop_stream()
-            stream.close()
-
-        except Exception as e:
-            self._audio_error = str(e)
-        finally:
-            p.terminate()
-
-        if frames:
-            with wave.open(self._audio_path, "wb") as wf:
-                wf.setnchannels(CHANNELS)
-                wf.setsampwidth(2)  # paInt16 = 2 bytes
-                wf.setframerate(RATE)
-                wf.writeframes(b"".join(frames))
-
-    # ─── Merge audio + video ──────────────────────────────────────
-
-    def _merge(self):
-        if self._audio_error:
-            self.root.after(0, lambda: self._on_error(
-                f"Errore registrazione audio:\n{self._audio_error}"
-            ))
-            return
-
-        try:
-            cmd = [
-                self._ffmpeg, "-y",
-                "-i", self._video_path,
-                "-i", self._audio_path,
-                "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-                "-c:a", "aac", "-b:a", "192k",
-                "-shortest",
-                self._output_path
-            ]
-            result = subprocess.run(cmd, capture_output=True, timeout=300)
-            if result.returncode != 0:
-                raise RuntimeError(result.stderr.decode(errors="replace"))
-
-            for f in (self._video_path, self._audio_path):
-                if os.path.exists(f):
-                    os.remove(f)
-
-            self.root.after(0, self._on_success)
-        except Exception as e:
-            self.root.after(0, lambda: self._on_error(str(e)))
-
-    def _on_success(self):
-        self._timer_lbl.config(fg=GREEN)
-        self._status_lbl.config(
-            text=f"✓  Salvato: {os.path.basename(self._output_path)}", fg=GREEN
-        )
-        self._start_btn.config(state="normal", cursor="hand2")
-        self._rb_loopback.config(state="normal" if HAS_WPATCH else "disabled")
-        self._rb_mic.config(state="normal")
-        self._dev_option.config(state="normal")
-        self._prog_canvas.coords(self._prog_bar, 0, 0, 400, 4)
-        self._prog_canvas.itemconfig(self._prog_bar, fill=GREEN)
-        messagebox.showinfo("Registrazione completata",
-                            f"File salvato in:\n{self._output_path}")
-        self._prog_canvas.itemconfig(self._prog_bar, fill=RED)
-
-    def _on_error(self, msg: str):
-        self._status_lbl.config(text="✗  Errore durante l'elaborazione", fg=RED)
-        self._start_btn.config(state="normal", cursor="hand2")
-        self._rb_loopback.config(state="normal" if HAS_WPATCH else "disabled")
-        self._rb_mic.config(state="normal")
-        self._dev_option.config(state="normal")
-        messagebox.showerror("Errore", msg)
-
-    # ─── Timer ────────────────────────────────────────────────────
-
-    def _update_timer(self):
-        if not self.recording:
-            return
-        elapsed = time.time() - self.start_time
-        self._timer_lbl.config(
-            text=f"{int(elapsed//60):02d}:{int(elapsed%60):02d}"
-        )
-        prog = (elapsed % 10) / 10 * 400
-        self._prog_canvas.coords(self._prog_bar, 0, 0, prog, 4)
-        self.root.after(500, self._update_timer)
-
-    # ─── Deps ─────────────────────────────────────────────────────
-
-    def _show_deps_error(self):
-        messagebox.showerror(
-            "Dipendenze mancanti
+        process_econ_files(folder)
+        process_assets_equity(folder)
+        log("")
+        log("✔ Operazione completata con successo.")
+    except Exception as e:
+        log(f"\n[ERRORE] {str(e)}")
+        messagebox.showerror("Errore", str(e))
+
+
+# =========================
+# RUN REPAIR
+# =========================
+def run_repair():
+    folder = folder_path.get()
+    if not folder:
+        messagebox.showerror("Errore", "Seleziona una cartella.")
+        return
+
+    log_box.delete(1.0, tk.END)
+    log(f"Cartella selezionata: {folder}")
+    log(f"Avvio riparazione fine riga...\n")
+
+    try:
+        repair_line_endings(folder)
+        log("")
+        log("✔ Riparazione completata con successo.")
+    except Exception as e:
+        log(f"\n[ERRORE] {str(e)}")
+        messagebox.showerror("Errore", str(e))
+
+
+# =========================
+# GUI
+# =========================
+root = tk.Tk()
+root.title("APT Output Tool")
+root.geometry("750x580")
+root.resizable(False, False)
+
+folder_path = tk.StringVar()
+
+tk.Label(root, text="Seleziona cartella APT - Output:", font=("Arial", 10)).pack(pady=5)
+
+frame = tk.Frame(root)
+frame.pack()
+
+tk.Entry(frame, textvariable=folder_path, width=70).pack(side=tk.LEFT, padx=5)
+tk.Button(frame, text="Browse",
+          command=lambda: folder_path.set(filedialog.askdirectory())).pack(side=tk.LEFT)
+
+btn_frame = tk.Frame(root)
+btn_frame.pack(pady=10)
+
+tk.Button(btn_frame, text="Esegui",
+          command=run_process,
+          bg="green",
+          fg="white",
+          width=25,
+          height=2).pack(side=tk.LEFT, padx=10)
+
+tk.Button(btn_frame, text="Ripara Fine Riga",
+          command=run_repair,
+          bg="steelblue",
+          fg="white",
+          width=25,
+          height=2).pack(side=tk.LEFT, padx=10)
+
+log_box = scrolledtext.ScrolledText(root, width=90, height=22, font=("Courier", 9))
+log_box.pack(pady=10)
+
+root.mainloop()
