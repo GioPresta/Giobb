@@ -1,17 +1,1 @@
-formatted = {}
-
-for col in self.base_data.columns:
-    try:
-        print(f"\nSto processando colonna: {col}")
-        formatted[col] = utils_v1.apply_filter(self.base_data[col].copy())
-    except Exception as e:
-        print(f"\nERRORE nella colonna: {col}")
-        print(f"Tipo errore: {type(e).__name__}")
-        print(f"Messaggio: {e}")
-        print("\nPrimi valori:")
-        print(self.base_data[col].head(20))
-        print("\nValori null:")
-        print(self.base_data[col].isna().sum())
-        raise
-
-self.formatted_data = pd.DataFrame(formatted)
+self.base_data.to_excel("debug_base_data.xlsx", index=False)
