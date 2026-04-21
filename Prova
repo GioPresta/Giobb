@@ -1,4 +1,8 @@
-print(txt_test.base_data.loc[4])
-print(txt_test.formatted_data.loc[4])
-print(txt_test.base_data.loc[99998])
-print(txt_test.formatted_data.loc[99998])
+if columns.loc[data.name, "IsAmount"]:
+    tmp = pd.to_numeric(data, errors="coerce")
+    return tmp.mul(1000).round(0).fillna(0).astype("int64").astype(str)
+
+elif columns.loc[data.name, "IsRate"]:
+    tmp = pd.to_numeric(data, errors="coerce")
+    tmp = tmp.clip(lower=0)
+    return tmp.mul(10000).round(0).fillna(0).astype("int64").astype(str)
