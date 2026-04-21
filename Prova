@@ -1,5 +1,5 @@
-txt_test = adapter_v1.SofiaAdapter()
-txt_test = txt_test.get_data(txt_test_file).translate_data(f"{os.getcwd()}//TEST FILES//Test_Output.txt")
-
-print("SALVATO IN:", txt_test.output_directory)
-print("FOLLOWUP:", txt_test.followup)
+print("FOLLOWUP DOPO GET_DATA:", txt_test.followup)
+print("ERRORI ENTRY:")
+print(txt_test.errors["Entry"])
+print("ERRORI VALUE:")
+print(txt_test.errors["Value"])
