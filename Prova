@@ -1,1 +1,15 @@
-self.base_data.to_excel("debug_base_data.xlsx", index=False)
+formatted = {}
+
+for col in self.base_data.columns:
+    data = self.base_data[col].copy()
+    try:
+        print(f"Sto processando colonna: {col}")
+        formatted[col] = utils_v1.apply_filter(data)
+    except Exception as e:
+        self.debug_col_name = col
+        self.debug_data = data
+        self.debug_data.to_csv("debug_data_colonna_errore.csv", index=True)
+        print(f"\nERRORE nella colonna: {col}")
+        print(f"Tipo errore: {type(e).__name__}")
+        print(f"Messaggio: {e}")
+        break
