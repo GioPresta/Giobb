@@ -1,15 +1,19 @@
-formatted = {}
+# ===== DEBUG COMPLETO =====
 
-for col in self.base_data.columns:
-    data = self.base_data[col].copy()
-    try:
-        print(f"Sto processando colonna: {col}")
-        formatted[col] = utils_v1.apply_filter(data)
-    except Exception as e:
-        self.debug_col_name = col
-        self.debug_data = data
-        self.debug_data.to_csv("debug_data_colonna_errore.csv", index=True)
-        print(f"\nERRORE nella colonna: {col}")
-        print(f"Tipo errore: {type(e).__name__}")
-        print(f"Messaggio: {e}")
-        break
+# 1. Salva il dataframe per il Variable Explorer
+DEBUG_DF = self.base_data.copy()
+
+# lo rendo globale così Spyder lo vede SICURO
+globals()["DEBUG_DF"] = DEBUG_DF
+
+# 2. Stampa veloce
+print("\n=== DEBUG DATAFRAME ===")
+print(DEBUG_DF.head())
+
+# 3. Salva in Excel
+DEBUG_DF.to_excel("debug_dataframe.xlsx", index=False)
+
+# ==========================
+
+# COMMENTA temporaneamente questa riga per evitare il crash
+# self.formatted_data = self.base_data.copy().apply(utils_v1.apply_filter)
