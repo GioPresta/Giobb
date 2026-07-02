@@ -1,570 +1,188 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-Meeting Recorder - Registra schermo + audio (microfono O audio di sistema)
-Requisiti:
-    pip install mss opencv-python pyaudiowpatch numpy imageio-ffmpeg
-    (PyAudioWPatch include WASAPI loopback per catturare audio interno Windows)
+retrodata_fac.py
+
+PENSATO PER SPYDER: mettilo nella STESSA CARTELLA dei file .rpt (o .fac)
+e lancialo con F5 (Run). Non servono argomenti da riga di comando.
+
+Cosa fa:
+- Trova tutti i file con estensione EXTENSION nella cartella dello script
+- Legge le colonne BIRTH_YEAR, ENTRY_YEAR, ENTRY_MONTH, BIRTH_MONTH
+- Retrodata di MONTHS mesi le coppie (ENTRY_YEAR, ENTRY_MONTH) e
+  (BIRTH_YEAR, BIRTH_MONTH), ragionando anno e mese INSIEME. Esempio:
+      ENTRY_YEAR 2026, ENTRY_MONTH 3  ->  ENTRY_YEAR 2025, ENTRY_MONTH 9
+      BIRTH_YEAR 1973, BIRTH_MONTH 1  ->  BIRTH_YEAR 1972, BIRTH_MONTH 7
+- Sovrascrive ogni file originale (se OVERWRITE = True)
+- Stampa un log per ogni file: "fatto" oppure il motivo per cui è saltato
+
+Puoi cambiare le impostazioni qui sotto in CONFIGURAZIONE.
 """
 
-import tkinter as tk
-from tkinter import filedialog, messagebox
-import threading
-import time
-import os
-import datetime
-import subprocess
-import shutil
-import wave
+import csv
+from pathlib import Path
 
-# ─── Import dipendenze ────────────────────────────────────────────
-DEPS_OK    = True
-MISSING    = ""
-HAS_WPATCH = False
+# ======================= CONFIGURAZIONE =======================
 
-try:
-    import cv2
-    import numpy as np
-    import mss
-    import imageio_ffmpeg
-except ImportError as e:
-    DEPS_OK = False
-    MISSING = str(e)
+# Estensione dei file da processare. Metti None per processare TUTTI i
+# file nella cartella (indipendentemente dall'estensione).
+EXTENSION = ".rpt"
 
-# Prova PyAudioWPatch (WASAPI loopback), fallback a pyaudio normale
-try:
-    import pyaudiowpatch as pyaudio
-    HAS_WPATCH = True
-except ImportError:
+# Quanti mesi retrodatare (positivo = indietro nel tempo, come richiesto)
+MONTHS = 6
+
+# True  = sovrascrive i file originali
+# False = crea una copia "nome_retro.rpt" accanto all'originale, senza
+#         toccare quello originale
+OVERWRITE = True
+
+# ================================================================
+
+
+def get_script_dir() -> Path:
+    """Restituisce la cartella in cui si trova questo script.
+    Funziona sia lanciato da terminale sia da Spyder (F5)."""
     try:
-        import pyaudio
-    except ImportError as e:
-        DEPS_OK = False
-        MISSING = MISSING or str(e)
+        return Path(__file__).resolve().parent
+    except NameError:
+        # __file__ non definito (es. eseguito riga per riga in console
+        # interattiva): uso la cartella corrente di lavoro
+        return Path.cwd()
 
 
-# ─── Colori e stile ───────────────────────────────────────────────
-BG       = "#0f1117"
-PANEL    = "#1a1d27"
-BORDER   = "#2a2d3e"
-RED      = "#e53e3e"
-RED_DARK = "#c53030"
-GREEN    = "#38a169"
-BLUE     = "#4299e1"
-AMBER    = "#d69e2e"
-GRAY     = "#718096"
-WHITE    = "#f7fafc"
-MUTED    = "#a0aec0"
-FONT     = "Segoe UI"
-
-
-# ─── Utility: elenca dispositivi audio ───────────────────────────
-
-def _list_audio_devices():
-    """
-    Restituisce due liste:
-      - mic_devices:      [(idx, nome)]  dispositivi INPUT (microfono)
-      - loopback_devices: [(idx, nome)]  dispositivi LOOPBACK (audio sistema)
-    """
-    mic_devices      = []
-    loopback_devices = []
-
-    if not DEPS_OK:
-        return mic_devices, loopback_devices
-
-    p = pyaudio.PyAudio()
+def detect_delimiter(sample: str) -> str:
+    """Prova a rilevare il delimitatore del file CSV."""
     try:
-        for i in range(p.get_device_count()):
-            try:
-                info = p.get_device_info_by_index(i)
-            except Exception:
-                continue
-
-            name        = info.get("name", f"Device {i}")
-            is_input    = info.get("maxInputChannels", 0) > 0
-            is_loopback = info.get("isLoopbackDevice", False)  # solo PyAudioWPatch
-
-            if is_loopback:
-                loopback_devices.append((i, name))
-            elif is_input:
-                mic_devices.append((i, name))
-    finally:
-        p.terminate()
-
-    return mic_devices, loopback_devices
+        dialect = csv.Sniffer().sniff(sample, delimiters=[",", ";", "\t", "|"])
+        return dialect.delimiter
+    except csv.Error:
+        candidates = [",", ";", "\t", "|"]
+        counts = {d: sample.count(d) for d in candidates}
+        best = max(counts, key=counts.get)
+        return best if counts[best] > 0 else ","
 
 
-# ─── Classe principale ────────────────────────────────────────────
+def shift_year_month(year: int, month: int, months_delta: int):
+    """
+    Sposta indietro una coppia (anno, mese) di months_delta mesi,
+    ragionando anno e mese insieme.
+    Esempio: shift_year_month(2026, 3, 6) -> (2025, 9)
+    """
+    absolute_month = year * 12 + (month - 1)
+    absolute_month -= months_delta
+    new_year, new_month0 = divmod(absolute_month, 12)
+    return new_year, new_month0 + 1
 
-class MeetingRecorder:
 
-    def __init__(self, root: tk.Tk):
-        self.root = root
-        self.root.title("Meeting Recorder")
-        self.root.resizable(False, False)
-        self.root.configure(bg=BG)
+def process_file(input_path: Path, output_path: Path, months_delta: int) -> str:
+    """Elabora un singolo file. Ritorna una stringa di esito da stampare."""
+    with input_path.open("r", newline="", encoding="utf-8-sig") as f:
+        sample = f.read(4096)
+        f.seek(0)
+        delimiter = detect_delimiter(sample)
+        rows = list(csv.reader(f, delimiter=delimiter))
 
-        self.recording  = False
-        self.start_time = 0.0
-        self.save_dir   = (
-            os.path.expanduser("~\\Videos") if os.name == "nt"
-            else os.path.expanduser("~/Videos")
-        )
-        if not os.path.isdir(self.save_dir):
-            self.save_dir = os.path.expanduser("~")
+    if not rows:
+        return "NO - file vuoto"
 
-        self._video_path  = ""
-        self._audio_path  = ""
-        self._output_path = ""
-        self._audio_dev_idx = 0
-        self._is_loopback   = False
-        self._audio_error   = ""
-        self._video_thread  = None
-        self._audio_thread  = None
-        self._stop_evt      = threading.Event()
+    header = rows[0]
+    data_rows = rows[1:]
+    normalized_header = [h.strip().upper() for h in header]
 
-        # ffmpeg
+    required_cols = ["BIRTH_YEAR", "ENTRY_YEAR", "ENTRY_MONTH", "BIRTH_MONTH"]
+    missing = [c for c in required_cols if c not in normalized_header]
+    if missing:
+        return f"NO - colonne mancanti: {missing} (header trovato: {header})"
+
+    idx_birth_year = normalized_header.index("BIRTH_YEAR")
+    idx_entry_year = normalized_header.index("ENTRY_YEAR")
+    idx_entry_month = normalized_header.index("ENTRY_MONTH")
+    idx_birth_month = normalized_header.index("BIRTH_MONTH")
+
+    new_rows = [header]
+
+    for row_num, row in enumerate(data_rows, start=2):
+        if not row or all(cell.strip() == "" for cell in row):
+            new_rows.append(row)
+            continue
+
+        if len(row) != len(header):
+            return (f"NO - riga {row_num} ha {len(row)} campi, "
+                     f"attesi {len(header)}: {row}")
+
+        new_row = list(row)
         try:
-            self._ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
-        except Exception:
-            self._ffmpeg = shutil.which("ffmpeg") or shutil.which("ffmpeg.exe")
+            entry_year = int(row[idx_entry_year].strip())
+            entry_month = int(row[idx_entry_month].strip())
+            birth_year = int(row[idx_birth_year].strip())
+            birth_month = int(row[idx_birth_month].strip())
+        except ValueError as e:
+            return f"NO - riga {row_num}: valore non numerico ({e})"
+
+        new_entry_year, new_entry_month = shift_year_month(entry_year, entry_month, months_delta)
+        new_birth_year, new_birth_month = shift_year_month(birth_year, birth_month, months_delta)
+
+        new_row[idx_entry_year] = str(new_entry_year)
+        new_row[idx_entry_month] = str(new_entry_month)
+        new_row[idx_birth_year] = str(new_birth_year)
+        new_row[idx_birth_month] = str(new_birth_month)
+
+        new_rows.append(new_row)
+
+    # Scrivo su file temporaneo e poi sostituisco (scrittura sicura anche
+    # quando sto sovrascrivendo il file originale)
+    tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+    with tmp_path.open("w", newline="", encoding="utf-8") as f:
+        csv.writer(f, delimiter=delimiter).writerows(new_rows)
+    tmp_path.replace(output_path)
+
+    return f"fatto (delimitatore: {delimiter!r}, {len(data_rows)} righe)"
 
-        # Dispositivi audio
-        self._mic_devices, self._loopback_devices = _list_audio_devices()
-
-        self._build_ui()
-
-        if not DEPS_OK:
-            self._show_deps_error()
-
-    # ─── UI ───────────────────────────────────────────────────────
-
-    def _build_ui(self):
-        # ── Header ──
-        header = tk.Frame(self.root, bg=BG)
-        header.pack(fill="x", padx=24, pady=(24, 8))
-        tk.Label(header, text="⏺", font=(FONT, 28), bg=BG, fg=RED).pack(side="left")
-        tk.Label(header, text=" Meeting Recorder",
-                 font=(FONT, 20, "bold"), bg=BG, fg=WHITE).pack(side="left")
-
-        # ── Cartella ──
-        box = self._card()
-        tk.Label(box, text="📁  Cartella di salvataggio",
-                 font=(FONT, 9, "bold"), bg=PANEL, fg=MUTED).pack(anchor="w", pady=(14, 4))
-
-        row = tk.Frame(box, bg=PANEL)
-        row.pack(fill="x", pady=(0, 12))
-
-        self._dir_var = tk.StringVar(value=self.save_dir)
-        tk.Entry(row, textvariable=self._dir_var,
-                 font=(FONT, 10), bg=BORDER, fg=WHITE,
-                 insertbackground=WHITE, relief="flat",
-                 readonlybackground=BORDER, state="readonly",
-                 width=36).pack(side="left", fill="x", expand=True, ipady=7, padx=(0, 8))
-        tk.Button(row, text="Sfoglia…",
-                  font=(FONT, 10), bg=BLUE, fg=WHITE,
-                  relief="flat", cursor="hand2", padx=12,
-                  activebackground="#2b6cb0", activeforeground=WHITE,
-                  command=self._choose_dir).pack(side="left", ipady=5)
-
-        # ── Nome file ──
-        tk.Label(box, text="📝  Nome file  (vuoto = data/ora automatica)",
-                 font=(FONT, 9, "bold"), bg=PANEL, fg=MUTED).pack(anchor="w", pady=(0, 4))
-        self._name_var = tk.StringVar()
-        tk.Entry(box, textvariable=self._name_var,
-                 font=(FONT, 10), bg=BORDER, fg=WHITE,
-                 insertbackground=WHITE, relief="flat"
-                 ).pack(fill="x", ipady=7, pady=(0, 14))
-
-        # ── Monitor + FPS ──
-        tk.Label(box, text="🖥️  Monitor",
-                 font=(FONT, 9, "bold"), bg=PANEL, fg=MUTED).pack(anchor="w", pady=(0, 4))
-        mon_row = tk.Frame(box, bg=PANEL)
-        mon_row.pack(fill="x", pady=(0, 14))
-
-        self._monitor_var = tk.IntVar(value=1)
-        try:
-            with mss.mss() as sct:
-                n = len(sct.monitors) - 1
-        except Exception:
-            n = 1
-
-        om = tk.OptionMenu(mon_row, self._monitor_var, *range(1, n + 1))
-        om.config(font=(FONT, 10), bg=BORDER, fg=WHITE,
-                  activebackground=BORDER, activeforeground=WHITE,
-                  relief="flat", highlightthickness=0)
-        om["menu"].config(bg=BORDER, fg=WHITE, font=(FONT, 10))
-        om.pack(side="left")
-
-        tk.Label(mon_row, text="   FPS:", font=(FONT, 9, "bold"),
-                 bg=PANEL, fg=MUTED).pack(side="left")
-        self._fps_var = tk.IntVar(value=15)
-        tk.Spinbox(mon_row, from_=5, to=30, textvariable=self._fps_var,
-                   font=(FONT, 10), bg=BORDER, fg=WHITE, relief="flat",
-                   width=4, buttonbackground=BORDER,
-                   insertbackground=WHITE).pack(side="left", padx=(6, 0), ipady=4)
-
-        # ── Sorgente Audio ──────────────────────────────────────────
-        audio_box = self._card()
-
-        tk.Label(audio_box, text="🎧  Sorgente audio",
-                 font=(FONT, 9, "bold"), bg=PANEL, fg=MUTED).pack(anchor="w", pady=(14, 8))
-
-        self._audio_mode = tk.StringVar(
-            value="loopback" if (HAS_WPATCH and self._loopback_devices) else "mic"
-        )
-
-        radio_row = tk.Frame(audio_box, bg=PANEL)
-        radio_row.pack(fill="x", pady=(0, 8))
-
-        self._rb_loopback = tk.Radiobutton(
-            radio_row,
-            text="🔊  Audio di sistema  (Teams, voce di tutti + suoni PC)",
-            variable=self._audio_mode, value="loopback",
-            font=(FONT, 10), bg=PANEL, fg=WHITE,
-            selectcolor=BORDER, activebackground=PANEL,
-            activeforeground=WHITE, cursor="hand2",
-            command=self._on_audio_mode_change
-        )
-        self._rb_loopback.pack(anchor="w")
-
-        self._rb_mic = tk.Radiobutton(
-            radio_row,
-            text="🎤  Microfono  (solo tua voce)",
-            variable=self._audio_mode, value="mic",
-            font=(FONT, 10), bg=PANEL, fg=WHITE,
-            selectcolor=BORDER, activebackground=PANEL,
-            activeforeground=WHITE, cursor="hand2",
-            command=self._on_audio_mode_change
-        )
-        self._rb_mic.pack(anchor="w", pady=(4, 0))
-
-        # Avviso se PyAudioWPatch non installato
-        if not HAS_WPATCH:
-            tk.Label(
-                audio_box,
-                text="⚠️  Per audio di sistema installa:\n"
-                     "     pip install pyaudiowpatch",
-                font=(FONT, 8), bg=PANEL, fg=AMBER,
-                justify="left"
-            ).pack(anchor="w", pady=(2, 4))
-            self._rb_loopback.config(state="disabled", fg=GRAY)
-
-        # Dropdown dispositivo
-        self._audio_device_map = {}
-        self._dev_menu_var = tk.StringVar()
-
-        tk.Label(audio_box, text="Dispositivo:",
-                 font=(FONT, 9, "bold"), bg=PANEL, fg=MUTED).pack(anchor="w", pady=(8, 2))
-
-        self._dev_option = tk.OptionMenu(audio_box, self._dev_menu_var, "")
-        self._dev_option.config(font=(FONT, 10), bg=BORDER, fg=WHITE,
-                                activebackground=BORDER, activeforeground=WHITE,
-                                relief="flat", highlightthickness=0, width=44)
-        self._dev_option["menu"].config(bg=BORDER, fg=WHITE, font=(FONT, 10))
-        self._dev_option.pack(anchor="w", pady=(0, 14))
-
-        self._populate_device_menu()
-
-        # ── Timer ──
-        timer_frame = tk.Frame(self.root, bg=BG)
-        timer_frame.pack(pady=(10, 4))
-
-        self._timer_lbl = tk.Label(timer_frame, text="00:00",
-                                    font=(FONT, 40, "bold"), bg=BG, fg=BORDER)
-        self._timer_lbl.pack()
-
-        self._status_lbl = tk.Label(timer_frame, text="In attesa…",
-                                     font=(FONT, 11), bg=BG, fg=GRAY)
-        self._status_lbl.pack()
-
-        # ── Progress bar ──
-        self._prog_canvas = tk.Canvas(self.root, bg=BG, height=4,
-                                       width=400, highlightthickness=0)
-        self._prog_canvas.pack()
-        self._prog_bar = self._prog_canvas.create_rectangle(0, 0, 0, 4, fill=RED, outline="")
-
-        # ── Bottoni ──
-        btn_frame = tk.Frame(self.root, bg=BG)
-        btn_frame.pack(pady=16)
-
-        self._start_btn = tk.Button(
-            btn_frame, text="  ▶  Avvia registrazione",
-            font=(FONT, 13, "bold"), bg=GREEN, fg=WHITE,
-            relief="flat", cursor="hand2", padx=22,
-            activebackground="#276749", activeforeground=WHITE,
-            command=self.start_recording
-        )
-        self._start_btn.pack(side="left", ipady=10, padx=(0, 10))
-
-        self._stop_btn = tk.Button(
-            btn_frame, text="  ■  Ferma",
-            font=(FONT, 13, "bold"), bg=BORDER, fg=MUTED,
-            relief="flat", cursor="arrow", padx=22,
-            activebackground=RED_DARK, activeforeground=WHITE,
-            state="disabled", command=self.stop_recording
-        )
-        self._stop_btn.pack(side="left", ipady=10)
-
-        tk.Label(self.root,
-                 text="Output: MP4  ·  Audio: AAC  ·  Video: H.264  ·  ffmpeg via imageio-ffmpeg",
-                 font=(FONT, 8), bg=BG, fg=GRAY).pack(pady=(0, 14))
-
-    def _card(self, **kw):
-        defaults = dict(padx=24, pady=4, fill="x")
-        defaults.update(kw)
-        f = tk.Frame(self.root, bg=PANEL,
-                     highlightbackground=BORDER, highlightthickness=1)
-        f.pack(**defaults)
-        return f
-
-    # ─── Audio device selector ────────────────────────────────────
-
-    def _on_audio_mode_change(self):
-        self._populate_device_menu()
-
-    def _populate_device_menu(self):
-        mode    = self._audio_mode.get()
-        devices = self._loopback_devices if mode == "loopback" else self._mic_devices
-
-        menu = self._dev_option["menu"]
-        menu.delete(0, "end")
-        self._audio_device_map = {}
-
-        if not devices:
-            msg = ("Nessun dispositivo loopback — installa PyAudioWPatch"
-                   if mode == "loopback" else "Nessun microfono trovato")
-            self._dev_menu_var.set(msg)
-            return
-
-        for idx, name in devices:
-            label = name[:58]
-            self._audio_device_map[label] = idx
-            menu.add_command(label=label,
-                             command=lambda l=label: self._dev_menu_var.set(l))
-
-        self._dev_menu_var.set(devices[0][1][:58])
-
-    def _get_selected_device_index(self):
-        return self._audio_device_map.get(self._dev_menu_var.get())
-
-    # ─── Azioni ───────────────────────────────────────────────────
-
-    def _choose_dir(self):
-        d = filedialog.askdirectory(initialdir=self.save_dir, title="Scegli cartella")
-        if d:
-            self.save_dir = d
-            self._dir_var.set(d)
-
-    def start_recording(self):
-        if not DEPS_OK:
-            self._show_deps_error()
-            return
-        if not self._ffmpeg:
-            messagebox.showerror("ffmpeg non trovato",
-                                 "pip install imageio-ffmpeg")
-            return
-
-        dev_idx = self._get_selected_device_index()
-        if dev_idx is None:
-            messagebox.showerror("Nessun dispositivo audio",
-                                 "Seleziona un dispositivo audio prima di avviare.")
-            return
-
-        ts   = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        name = self._name_var.get().strip() or f"meeting_{ts}"
-        name = "".join(c for c in name if c not in r'\/:*?"<>|')
-
-        self._video_path    = os.path.join(self.save_dir, f"_{name}_raw.avi")
-        self._audio_path    = os.path.join(self.save_dir, f"_{name}_raw.wav")
-        self._output_path   = os.path.join(self.save_dir, f"{name}.mp4")
-        self._audio_dev_idx = dev_idx
-        self._is_loopback   = (self._audio_mode.get() == "loopback")
-        self._audio_error   = ""
-
-        self._stop_evt.clear()
-        self.recording  = True
-        self.start_time = time.time()
-
-        self._video_thread = threading.Thread(target=self._record_screen, daemon=True)
-        self._audio_thread = threading.Thread(target=self._record_audio,  daemon=True)
-        self._video_thread.start()
-        self._audio_thread.start()
-
-        self._start_btn.config(state="disabled", cursor="arrow")
-        self._stop_btn.config(state="normal", bg=RED, fg=WHITE, cursor="hand2")
-        self._rb_loopback.config(state="disabled")
-        self._rb_mic.config(state="disabled")
-        self._dev_option.config(state="disabled")
-        self._status_lbl.config(text="● Registrazione in corso…", fg=RED)
-        self._timer_lbl.config(fg=WHITE)
-        self._update_timer()
-
-    def stop_recording(self):
-        self.recording = False
-        self._stop_evt.set()
-        self._stop_btn.config(state="disabled", bg=BORDER, fg=MUTED, cursor="arrow")
-        self._status_lbl.config(text="⏳ Elaborazione…", fg=BLUE)
-        threading.Thread(target=self._finalize, daemon=True).start()
-
-    def _finalize(self):
-        for t in (self._video_thread, self._audio_thread):
-            if t:
-                t.join(timeout=15)
-        self._merge()
-
-    # ─── Registrazione schermo ────────────────────────────────────
-
-    def _record_screen(self):
-        fps      = self._fps_var.get()
-        mon_idx  = self._monitor_var.get()
-        interval = 1.0 / fps
-
-        with mss.mss() as sct:
-            monitor = sct.monitors[mon_idx]
-            w, h    = monitor["width"], monitor["height"]
-            fourcc  = cv2.VideoWriter_fourcc(*"XVID")
-            out     = cv2.VideoWriter(self._video_path, fourcc, fps, (w, h))
-
-            while not self._stop_evt.is_set():
-                t0    = time.perf_counter()
-                img   = sct.grab(monitor)
-                frame = np.array(img)
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
-                out.write(frame)
-                rem = interval - (time.perf_counter() - t0)
-                if rem > 0:
-                    time.sleep(rem)
-
-            out.release()
-
-    # ─── Registrazione audio ──────────────────────────────────────
-
-    def _record_audio(self):
-        CHUNK  = 1024
-        FORMAT = pyaudio.paInt16
-
-        p = pyaudio.PyAudio()
-        frames   = []
-        CHANNELS = 2
-        RATE     = 44100
-
-        try:
-            info     = p.get_device_info_by_index(self._audio_dev_idx)
-            CHANNELS = min(int(info.get("maxInputChannels", 2)), 2) or 1
-            RATE     = int(info.get("defaultSampleRate", 44100))
-
-            stream = p.open(
-                format=FORMAT,
-                channels=CHANNELS,
-                rate=RATE,
-                input=True,
-                input_device_index=self._audio_dev_idx,
-                frames_per_buffer=CHUNK
-            )
-
-            while not self._stop_evt.is_set():
-                data = stream.read(CHUNK, exception_on_overflow=False)
-                frames.append(data)
-
-            stream.stop_stream()
-            stream.close()
-
-        except Exception as e:
-            self._audio_error = str(e)
-        finally:
-            p.terminate()
-
-        if frames:
-            with wave.open(self._audio_path, "wb") as wf:
-                wf.setnchannels(CHANNELS)
-                wf.setsampwidth(2)  # paInt16 = 2 bytes
-                wf.setframerate(RATE)
-                wf.writeframes(b"".join(frames))
-
-    # ─── Merge audio + video ──────────────────────────────────────
-
-    def _merge(self):
-        if self._audio_error:
-            self.root.after(0, lambda: self._on_error(
-                f"Errore registrazione audio:\n{self._audio_error}"
-            ))
-            return
-
-        try:
-            cmd = [
-                self._ffmpeg, "-y",
-                "-i", self._video_path,
-                "-i", self._audio_path,
-                "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-                "-c:a", "aac", "-b:a", "192k",
-                "-shortest",
-                self._output_path
-            ]
-            result = subprocess.run(cmd, capture_output=True, timeout=300)
-            if result.returncode != 0:
-                raise RuntimeError(result.stderr.decode(errors="replace"))
-
-            for f in (self._video_path, self._audio_path):
-                if os.path.exists(f):
-                    os.remove(f)
-
-            self.root.after(0, self._on_success)
-        except Exception as e:
-            self.root.after(0, lambda: self._on_error(str(e)))
-
-    def _on_success(self):
-        self._timer_lbl.config(fg=GREEN)
-        self._status_lbl.config(
-            text=f"✓  Salvato: {os.path.basename(self._output_path)}", fg=GREEN
-        )
-        self._start_btn.config(state="normal", cursor="hand2")
-        self._rb_loopback.config(state="normal" if HAS_WPATCH else "disabled")
-        self._rb_mic.config(state="normal")
-        self._dev_option.config(state="normal")
-        self._prog_canvas.coords(self._prog_bar, 0, 0, 400, 4)
-        self._prog_canvas.itemconfig(self._prog_bar, fill=GREEN)
-        messagebox.showinfo("Registrazione completata",
-                            f"File salvato in:\n{self._output_path}")
-        self._prog_canvas.itemconfig(self._prog_bar, fill=RED)
-
-    def _on_error(self, msg: str):
-        self._status_lbl.config(text="✗  Errore durante l'elaborazione", fg=RED)
-        self._start_btn.config(state="normal", cursor="hand2")
-        self._rb_loopback.config(state="normal" if HAS_WPATCH else "disabled")
-        self._rb_mic.config(state="normal")
-        self._dev_option.config(state="normal")
-        messagebox.showerror("Errore", msg)
-
-    # ─── Timer ────────────────────────────────────────────────────
-
-    def _update_timer(self):
-        if not self.recording:
-            return
-        elapsed = time.time() - self.start_time
-        self._timer_lbl.config(
-            text=f"{int(elapsed//60):02d}:{int(elapsed%60):02d}"
-        )
-        prog = (elapsed % 10) / 10 * 400
-        self._prog_canvas.coords(self._prog_bar, 0, 0, prog, 4)
-        self.root.after(500, self._update_timer)
-
-    # ─── Deps ─────────────────────────────────────────────────────
-
-    def _show_deps_error(self):
-        messagebox.showerror(
-            "Dipendenze mancanti",
-            "Installa le dipendenze con:\n\n"
-            "pip install mss opencv-python pyaudiowpatch numpy imageio-ffmpeg\n\n"
-            f"Errore rilevato: {MISSING}"
-        )
-
-
-# ─── Entry point ──────────────────────────────────────────────────
 
 def main():
-    root = tk.Tk()
-    root.geometry("460x700")
-    MeetingRecorder(root)
-    root.mainloop()
+    script_dir = get_script_dir()
+    print(f"Cartella di lavoro: {script_dir}")
+
+    if EXTENSION:
+        candidates = sorted(script_dir.glob(f"*{EXTENSION}"))
+    else:
+        candidates = sorted(p for p in script_dir.iterdir() if p.is_file())
+
+    # Escludo lo script stesso e eventuali file temporanei
+    candidates = [
+        p for p in candidates
+        if not p.name.endswith(".tmp") and not p.name.endswith(".py")
+    ]
+
+    if not candidates:
+        print(f"Nessun file trovato con estensione '{EXTENSION}' in {script_dir}")
+        return
+
+    print(f"Trovati {len(candidates)} file. Retrodatazione di {MONTHS} mesi. "
+          f"Overwrite = {OVERWRITE}\n")
+
+    ok_count = 0
+    err_count = 0
+
+    for input_path in candidates:
+        if OVERWRITE:
+            output_path = input_path
+        else:
+            output_path = input_path.with_name(input_path.stem + "_retro" + input_path.suffix)
+
+        try:
+            esito = process_file(input_path, output_path, MONTHS)
+        except Exception as e:
+            esito = f"NO - errore imprevisto: {e}"
+
+        print(f"{input_path.name}: {esito}")
+
+        if esito.startswith("fatto"):
+            ok_count += 1
+        else:
+            err_count += 1
+
+    print(f"\nCompletato: {ok_count} fatti, {err_count} non fatti (su {len(candidates)} file totali).")
 
 
 if __name__ == "__main__":
