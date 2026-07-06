@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-retrodata_fac.py
+fix_ann_prem_st_m_tup.py
 
-PENSATO PER SPYDER: mettilo nella STESSA CARTELLA dei file .rpt (o .fac)
-e lancialo con F5 (Run). Non servono argomenti da riga di comando.
+TOOL SEPARATO, stessa logica del tool di retrodatazione.
+PENSATO PER SPYDER: mettilo nella STESSA CARTELLA dei file .rpt e lancialo
+con F5 (Run). Non servono argomenti da riga di comando.
 
 Cosa fa:
 - Trova tutti i file con estensione EXTENSION nella cartella dello script
-- Legge le colonne BIRTH_YEAR, ENTRY_YEAR, ENTRY_MONTH, BIRTH_MONTH
-- Retrodata di MONTHS mesi le coppie (ENTRY_YEAR, ENTRY_MONTH) e
-  (BIRTH_YEAR, BIRTH_MONTH), ragionando anno e mese INSIEME. Esempio:
-      ENTRY_YEAR 2026, ENTRY_MONTH 3  ->  ENTRY_YEAR 2025, ENTRY_MONTH 9
-      BIRTH_YEAR 1973, BIRTH_MONTH 1  ->  BIRTH_YEAR 1972, BIRTH_MONTH 7
+- Legge la colonna ANN_PREM_ST_M_TUP
+- Sostituisce OLD_VALUE con NEW_VALUE in quella colonna (default: 7 -> 1)
 - Sovrascrive ogni file originale (se OVERWRITE = True)
-- Stampa un log per ogni file: "fatto" oppure il motivo per cui è saltato
+- Stampa un log per ogni file: "fatto" (con quante righe modificate)
+  oppure il motivo per cui è saltato
 
 Puoi cambiare le impostazioni qui sotto in CONFIGURAZIONE.
 """
@@ -28,11 +27,15 @@ from pathlib import Path
 # file nella cartella (indipendentemente dall'estensione).
 EXTENSION = ".rpt"
 
-# Quanti mesi retrodatare (positivo = indietro nel tempo, come richiesto)
-MONTHS = 6
+# Nome della colonna da modificare
+COLUMN_NAME = "ANN_PREM_ST_M_TUP"
+
+# Valore da cercare e valore con cui sostituirlo
+OLD_VALUE = "7"
+NEW_VALUE = "1"
 
 # True  = sovrascrive i file originali
-# False = crea una copia "nome_retro.rpt" accanto all'originale, senza
+# False = crea una copia "nome_fix.rpt" accanto all'originale, senza
 #         toccare quello originale
 OVERWRITE = True
 
@@ -45,8 +48,6 @@ def get_script_dir() -> Path:
     try:
         return Path(__file__).resolve().parent
     except NameError:
-        # __file__ non definito (es. eseguito riga per riga in console
-        # interattiva): uso la cartella corrente di lavoro
         return Path.cwd()
 
 
@@ -62,19 +63,7 @@ def detect_delimiter(sample: str) -> str:
         return best if counts[best] > 0 else ","
 
 
-def shift_year_month(year: int, month: int, months_delta: int):
-    """
-    Sposta indietro una coppia (anno, mese) di months_delta mesi,
-    ragionando anno e mese insieme.
-    Esempio: shift_year_month(2026, 3, 6) -> (2025, 9)
-    """
-    absolute_month = year * 12 + (month - 1)
-    absolute_month -= months_delta
-    new_year, new_month0 = divmod(absolute_month, 12)
-    return new_year, new_month0 + 1
-
-
-def process_file(input_path: Path, output_path: Path, months_delta: int) -> str:
+def process_file(input_path: Path, output_path: Path) -> str:
     """Elabora un singolo file. Ritorna una stringa di esito da stampare."""
     with input_path.open("r", newline="", encoding="utf-8-sig") as f:
         sample = f.read(4096)
@@ -89,17 +78,14 @@ def process_file(input_path: Path, output_path: Path, months_delta: int) -> str:
     data_rows = rows[1:]
     normalized_header = [h.strip().upper() for h in header]
 
-    required_cols = ["BIRTH_YEAR", "ENTRY_YEAR", "ENTRY_MONTH", "BIRTH_MONTH"]
-    missing = [c for c in required_cols if c not in normalized_header]
-    if missing:
-        return f"NO - colonne mancanti: {missing} (header trovato: {header})"
+    if COLUMN_NAME.upper() not in normalized_header:
+        return f"NO - colonna '{COLUMN_NAME}' non trovata (header: {header})"
 
-    idx_birth_year = normalized_header.index("BIRTH_YEAR")
-    idx_entry_year = normalized_header.index("ENTRY_YEAR")
-    idx_entry_month = normalized_header.index("ENTRY_MONTH")
-    idx_birth_month = normalized_header.index("BIRTH_MONTH")
+    idx_col = normalized_header.index(COLUMN_NAME.upper())
 
     new_rows = [header]
+    changed_count = 0
+    other_values_found = set()
 
     for row_num, row in enumerate(data_rows, start=2):
         if not row or all(cell.strip() == "" for cell in row):
@@ -111,32 +97,27 @@ def process_file(input_path: Path, output_path: Path, months_delta: int) -> str:
                      f"attesi {len(header)}: {row}")
 
         new_row = list(row)
-        try:
-            entry_year = int(row[idx_entry_year].strip())
-            entry_month = int(row[idx_entry_month].strip())
-            birth_year = int(row[idx_birth_year].strip())
-            birth_month = int(row[idx_birth_month].strip())
-        except ValueError as e:
-            return f"NO - riga {row_num}: valore non numerico ({e})"
+        current_value = row[idx_col].strip()
 
-        new_entry_year, new_entry_month = shift_year_month(entry_year, entry_month, months_delta)
-        new_birth_year, new_birth_month = shift_year_month(birth_year, birth_month, months_delta)
-
-        new_row[idx_entry_year] = str(new_entry_year)
-        new_row[idx_entry_month] = str(new_entry_month)
-        new_row[idx_birth_year] = str(new_birth_year)
-        new_row[idx_birth_month] = str(new_birth_month)
+        if current_value == OLD_VALUE:
+            new_row[idx_col] = NEW_VALUE
+            changed_count += 1
+        elif current_value != NEW_VALUE:
+            # valore diverso sia da quello atteso originale sia da quello
+            # nuovo: lo segnalo ma non lo tocco
+            other_values_found.add(current_value)
 
         new_rows.append(new_row)
 
-    # Scrivo su file temporaneo e poi sostituisco (scrittura sicura anche
-    # quando sto sovrascrivendo il file originale)
     tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
     with tmp_path.open("w", newline="", encoding="utf-8") as f:
         csv.writer(f, delimiter=delimiter).writerows(new_rows)
     tmp_path.replace(output_path)
 
-    return f"fatto (delimitatore: {delimiter!r}, {len(data_rows)} righe)"
+    esito = f"fatto ({changed_count}/{len(data_rows)} righe modificate {OLD_VALUE}->{NEW_VALUE})"
+    if other_values_found:
+        esito += f" [ATTENZIONE: trovati anche valori diversi non toccati: {sorted(other_values_found)}]"
+    return esito
 
 
 def main():
@@ -148,7 +129,6 @@ def main():
     else:
         candidates = sorted(p for p in script_dir.iterdir() if p.is_file())
 
-    # Escludo lo script stesso e eventuali file temporanei
     candidates = [
         p for p in candidates
         if not p.name.endswith(".tmp") and not p.name.endswith(".py")
@@ -158,8 +138,8 @@ def main():
         print(f"Nessun file trovato con estensione '{EXTENSION}' in {script_dir}")
         return
 
-    print(f"Trovati {len(candidates)} file. Retrodatazione di {MONTHS} mesi. "
-          f"Overwrite = {OVERWRITE}\n")
+    print(f"Trovati {len(candidates)} file. Colonna: {COLUMN_NAME}, "
+          f"{OLD_VALUE} -> {NEW_VALUE}. Overwrite = {OVERWRITE}\n")
 
     ok_count = 0
     err_count = 0
@@ -168,10 +148,10 @@ def main():
         if OVERWRITE:
             output_path = input_path
         else:
-            output_path = input_path.with_name(input_path.stem + "_retro" + input_path.suffix)
+            output_path = input_path.with_name(input_path.stem + "_fix" + input_path.suffix)
 
         try:
-            esito = process_file(input_path, output_path, MONTHS)
+            esito = process_file(input_path, output_path)
         except Exception as e:
             esito = f"NO - errore imprevisto: {e}"
 
