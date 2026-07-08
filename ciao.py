@@ -50,7 +50,29 @@ def get_script_dir() -> Path:
         return Path.cwd()
 
 
-def detect_delimiter(sample: str) -> str:
+def detect_quoting(sample: str) -> int:
+    """
+    Rileva se il file originale usa le virgolette attorno ai campi
+    (tipico export Prophet: "1973","1","2026","3").
+    Ritorna csv.QUOTE_ALL se le virgolette sono presenti, altrimenti
+    csv.QUOTE_MINIMAL (comportamento standard, quota solo se necessario).
+    """
+    # Cerco il pattern virgoletta-delimitatore o delimitatore-virgoletta,
+    # più affidabile del semplice conteggio di '"' nel testo
+    if '"' in sample:
+        return csv.QUOTE_ALL
+    return csv.QUOTE_MINIMAL
+
+
+def detect_line_ending(raw_bytes: bytes) -> str:
+    """Rileva il tipo di 'a capo' usato nel file originale."""
+    if b"\r\n" in raw_bytes:
+        return "\r\n"
+    elif b"\n" in raw_bytes:
+        return "\n"
+    elif b"\r" in raw_bytes:
+        return "\r"
+    return "\r\n"  # default se non rilevabile (es. file di una sola riga)
     """Prova a rilevare il delimitatore del file CSV."""
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=[",", ";", "\t", "|"])
@@ -76,10 +98,14 @@ def shift_year_month(year: int, month: int, months_delta: int):
 
 def process_file(input_path: Path, output_path: Path, months_delta: int) -> str:
     """Elabora un singolo file. Ritorna una stringa di esito da stampare."""
+    raw_bytes = input_path.read_bytes()
+    line_ending = detect_line_ending(raw_bytes)
+
     with input_path.open("r", newline="", encoding="utf-8-sig") as f:
         sample = f.read(4096)
         f.seek(0)
         delimiter = detect_delimiter(sample)
+        quoting = detect_quoting(sample)
         rows = list(csv.reader(f, delimiter=delimiter))
 
     if not rows:
@@ -146,13 +172,32 @@ def process_file(input_path: Path, output_path: Path, months_delta: int) -> str:
         new_rows.append(new_row)
 
     # Scrivo su file temporaneo e poi sostituisco (scrittura sicura anche
-    # quando sto sovrascrivendo il file originale)
+    # quando sto sovrascrivendo il file originale).
+    # Uso newline="" + lineterminator esplicito per riprodurre esattamente
+    # lo stesso tipo di "a capo" e lo stesso stile di virgolette del file
+    # originale.
+    ends_with_newline = raw_bytes.endswith(b"\n") or raw_bytes.endswith(b"\r")
+
     tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
     with tmp_path.open("w", newline="", encoding="utf-8") as f:
-        csv.writer(f, delimiter=delimiter).writerows(new_rows)
+        writer = csv.writer(f, delimiter=delimiter, quoting=quoting,
+                             lineterminator=line_ending)
+        writer.writerows(new_rows)
+
+    # Se il file originale non terminava con un a-capo finale, tolgo
+    # quello aggiunto automaticamente dall'ultima riga scritta
+    if not ends_with_newline:
+        content = tmp_path.read_bytes()
+        le_bytes = line_ending.encode()
+        if content.endswith(le_bytes):
+            content = content[: -len(le_bytes)]
+            tmp_path.write_bytes(content)
+
     tmp_path.replace(output_path)
 
-    return f"fatto (delimitatore: {delimiter!r}, {len(data_rows)} righe)"
+    quoting_label = "con virgolette" if quoting == csv.QUOTE_ALL else "senza virgolette forzate"
+    return (f"fatto (delimitatore: {delimiter!r}, {quoting_label}, "
+            f"a capo: {line_ending!r}, {len(data_rows)} righe)")
 
 
 def main():
