@@ -45,8 +45,6 @@ def get_script_dir() -> Path:
     try:
         return Path(__file__).resolve().parent
     except NameError:
-        # __file__ non definito (es. eseguito riga per riga in console
-        # interattiva): uso la cartella corrente di lavoro
         return Path.cwd()
 
 
@@ -54,11 +52,7 @@ def detect_quoting(sample: str) -> int:
     """
     Rileva se il file originale usa le virgolette attorno ai campi
     (tipico export Prophet: "1973","1","2026","3").
-    Ritorna csv.QUOTE_ALL se le virgolette sono presenti, altrimenti
-    csv.QUOTE_MINIMAL (comportamento standard, quota solo se necessario).
     """
-    # Cerco il pattern virgoletta-delimitatore o delimitatore-virgoletta,
-    # più affidabile del semplice conteggio di '"' nel testo
     if '"' in sample:
         return csv.QUOTE_ALL
     return csv.QUOTE_MINIMAL
@@ -72,7 +66,7 @@ def detect_line_ending(raw_bytes: bytes) -> str:
         return "\n"
     elif b"\r" in raw_bytes:
         return "\r"
-    return "\r\n"  # default se non rilevabile (es. file di una sola riga)
+    return "\r\n"
 
 
 def detect_delimiter(sample: str) -> str:
@@ -91,7 +85,6 @@ def shift_year_month(year: int, month: int, months_delta: int):
     """
     Sposta indietro una coppia (anno, mese) di months_delta mesi,
     ragionando anno e mese insieme.
-    Esempio: shift_year_month(2026, 3, 6) -> (2025, 9)
     """
     absolute_month = year * 12 + (month - 1)
     absolute_month -= months_delta
@@ -128,8 +121,6 @@ def process_file(input_path: Path, output_path: Path, months_delta: int) -> str:
     idx_entry_month = normalized_header.index("ENTRY_MONTH")
     idx_birth_month = normalized_header.index("BIRTH_MONTH")
 
-    # TYPE_ASSURED è opzionale: se presente e vale 1 sulla riga, non
-    # retrodato BIRTH_YEAR/BIRTH_MONTH per quella riga
     idx_type_assured = (
         normalized_header.index("TYPE_ASSURED")
         if "TYPE_ASSURED" in normalized_header else None
@@ -159,8 +150,6 @@ def process_file(input_path: Path, output_path: Path, months_delta: int) -> str:
         new_row[idx_entry_year] = str(new_entry_year)
         new_row[idx_entry_month] = str(new_entry_month)
 
-        # Controllo se questa riga ha TYPE_ASSURED = 1: in quel caso
-        # BIRTH_YEAR/BIRTH_MONTH restano invariati
         skip_birth = False
         if idx_type_assured is not None:
             type_assured_val = row[idx_type_assured].strip()
@@ -174,11 +163,6 @@ def process_file(input_path: Path, output_path: Path, months_delta: int) -> str:
 
         new_rows.append(new_row)
 
-    # Scrivo su file temporaneo e poi sostituisco (scrittura sicura anche
-    # quando sto sovrascrivendo il file originale).
-    # Uso newline="" + lineterminator esplicito per riprodurre esattamente
-    # lo stesso tipo di "a capo" e lo stesso stile di virgolette del file
-    # originale.
     ends_with_newline = raw_bytes.endswith(b"\n") or raw_bytes.endswith(b"\r")
 
     tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
@@ -187,8 +171,6 @@ def process_file(input_path: Path, output_path: Path, months_delta: int) -> str:
                              lineterminator=line_ending)
         writer.writerows(new_rows)
 
-    # Se il file originale non terminava con un a-capo finale, tolgo
-    # quello aggiunto automaticamente dall'ultima riga scritta
     if not ends_with_newline:
         content = tmp_path.read_bytes()
         le_bytes = line_ending.encode()
@@ -212,7 +194,6 @@ def main():
     else:
         candidates = sorted(p for p in script_dir.iterdir() if p.is_file())
 
-    # Escludo lo script stesso e eventuali file temporanei
     candidates = [
         p for p in candidates
         if not p.name.endswith(".tmp") and not p.name.endswith(".py")
