@@ -73,6 +73,9 @@ def detect_line_ending(raw_bytes: bytes) -> str:
     elif b"\r" in raw_bytes:
         return "\r"
     return "\r\n"  # default se non rilevabile (es. file di una sola riga)
+
+
+def detect_delimiter(sample: str) -> str:
     """Prova a rilevare il delimitatore del file CSV."""
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=[",", ";", "\t", "|"])
