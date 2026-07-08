@@ -6,183 +6,256 @@ retrodata_fac.py
 PENSATO PER SPYDER: mettilo nella STESSA CARTELLA dei file .rpt (o .fac)
 e lancialo con F5 (Run). Non servono argomenti da riga di comando.
 
-Cosa fa:
-- Trova tutti i file con estensione EXTENSION nella cartella dello script
-- Legge le colonne BIRTH_YEAR, ENTRY_YEAR, ENTRY_MONTH, BIRTH_MONTH
-- Retrodata di MONTHS mesi le coppie (ENTRY_YEAR, ENTRY_MONTH) e
-  (BIRTH_YEAR, BIRTH_MONTH), ragionando anno e mese INSIEME. Esempio:
-      ENTRY_YEAR 2026, ENTRY_MONTH 3  ->  ENTRY_YEAR 2025, ENTRY_MONTH 9
-      BIRTH_YEAR 1973, BIRTH_MONTH 1  ->  BIRTH_YEAR 1972, BIRTH_MONTH 7
-- Sovrascrive ogni file originale (se OVERWRITE = True)
-- Stampa un log per ogni file: "fatto" oppure il motivo per cui è saltato
+APPROCCIO "FORMAT PRESERVING":
+Questo script NON usa il modulo csv per riscrivere il file (che tende a
+normalizzare virgolette, spazi, zeri iniziali, ecc.). Invece:
+- legge il file riga per riga, byte per byte
+- riconosce la riga di intestazione cercando le colonne richieste
+- per ogni riga dati, individua SOLO i campi BIRTH_YEAR, BIRTH_MONTH,
+  ENTRY_YEAR, ENTRY_MONTH (ed eventualmente TYPE_ASSURED) e li sostituisce
+  con il nuovo valore, mantenendo identiche virgolette, zeri iniziali,
+  spazi interni ed eventuali blocchi/intestazioni ripetute nel file
+- tutte le altre righe (metadati, righe vuote, altre intestazioni,
+  altre colonne) restano ESATTAMENTE come nell'originale, carattere per
+  carattere, incluso il tipo di "a capo" (CRLF/LF) e l'eventuale assenza
+  di newline finale
+
+Logica di retrodatazione (anno e mese ragionati insieme):
+    ENTRY_YEAR 2026, ENTRY_MONTH 3  ->  ENTRY_YEAR 2025, ENTRY_MONTH 9
+    BIRTH_YEAR 1973, BIRTH_MONTH 1  ->  BIRTH_YEAR 1972, BIRTH_MONTH 7
+
+Se TYPE_ASSURED = 1 su una riga, BIRTH_YEAR/BIRTH_MONTH di quella riga
+NON vengono modificati.
 
 Puoi cambiare le impostazioni qui sotto in CONFIGURAZIONE.
 """
 
-import csv
 from pathlib import Path
 
 # ======================= CONFIGURAZIONE =======================
 
-# Estensione dei file da processare. Metti None per processare TUTTI i
-# file nella cartella (indipendentemente dall'estensione).
 EXTENSION = ".rpt"
-
-# Quanti mesi retrodatare (positivo = indietro nel tempo, come richiesto)
 MONTHS = 6
-
-# True  = sovrascrive i file originali
-# False = crea una copia "nome_retro.rpt" accanto all'originale, senza
-#         toccare quello originale
 OVERWRITE = True
+
+REQUIRED_COLS = ["BIRTH_YEAR", "ENTRY_YEAR", "ENTRY_MONTH", "BIRTH_MONTH"]
+TYPE_ASSURED_COL = "TYPE_ASSURED"
+
+DELIMITER_CANDIDATES = [",", ";", "\t", "|"]
 
 # ================================================================
 
 
 def get_script_dir() -> Path:
-    """Restituisce la cartella in cui si trova questo script.
-    Funziona sia lanciato da terminale sia da Spyder (F5)."""
     try:
         return Path(__file__).resolve().parent
     except NameError:
         return Path.cwd()
 
 
-def detect_quoting(sample: str) -> int:
-    """
-    Rileva se il file originale usa le virgolette attorno ai campi
-    (tipico export Prophet: "1973","1","2026","3").
-    """
-    if '"' in sample:
-        return csv.QUOTE_ALL
-    return csv.QUOTE_MINIMAL
+def read_text_preserving_encoding(path: Path):
+    raw = path.read_bytes()
+    for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            return raw.decode(enc), enc
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("latin-1"), "latin-1"
 
 
-def detect_line_ending(raw_bytes: bytes) -> str:
-    """Rileva il tipo di 'a capo' usato nel file originale."""
-    if b"\r\n" in raw_bytes:
-        return "\r\n"
-    elif b"\n" in raw_bytes:
-        return "\n"
-    elif b"\r" in raw_bytes:
-        return "\r"
-    return "\r\n"
+def split_line_ending(line: str):
+    if line.endswith("\r\n"):
+        return line[:-2], "\r\n"
+    if line.endswith("\n"):
+        return line[:-1], "\n"
+    if line.endswith("\r"):
+        return line[:-1], "\r"
+    return line, ""
 
 
-def detect_delimiter(sample: str) -> str:
-    """Prova a rilevare il delimitatore del file CSV."""
-    try:
-        dialect = csv.Sniffer().sniff(sample, delimiters=[",", ";", "\t", "|"])
-        return dialect.delimiter
-    except csv.Error:
-        candidates = [",", ";", "\t", "|"]
-        counts = {d: sample.count(d) for d in candidates}
-        best = max(counts, key=counts.get)
-        return best if counts[best] > 0 else ","
+def split_fields_raw(content: str, delimiter: str):
+    fields = []
+    cur = []
+    in_quotes = False
+    quote_char = None
+    i = 0
+    n = len(content)
+    while i < n:
+        c = content[i]
+        if in_quotes:
+            cur.append(c)
+            if c == quote_char:
+                if i + 1 < n and content[i + 1] == quote_char:
+                    cur.append(content[i + 1])
+                    i += 1
+                else:
+                    in_quotes = False
+        else:
+            if c in ('"', "'"):
+                in_quotes = True
+                quote_char = c
+                cur.append(c)
+            elif c == delimiter:
+                fields.append("".join(cur))
+                cur = []
+            else:
+                cur.append(c)
+        i += 1
+    fields.append("".join(cur))
+    return fields
+
+
+def strip_quotes_and_space(field: str) -> str:
+    f = field.strip()
+    if len(f) >= 2 and f[0] == f[-1] and f[0] in ('"', "'"):
+        f = f[1:-1]
+    return f.strip()
+
+
+def detect_delimiter_for_line(content: str, normalized_targets):
+    best = None
+    best_score = -1
+    for d in DELIMITER_CANDIDATES:
+        fields = split_fields_raw(content, d)
+        if len(fields) < 2:
+            continue
+        cleaned = [strip_quotes_and_space(f).upper() for f in fields]
+        score = sum(1 for t in normalized_targets if t in cleaned)
+        if score > best_score:
+            best_score = score
+            best = d
+    return best, best_score
 
 
 def shift_year_month(year: int, month: int, months_delta: int):
-    """
-    Sposta indietro una coppia (anno, mese) di months_delta mesi,
-    ragionando anno e mese insieme.
-    """
     absolute_month = year * 12 + (month - 1)
     absolute_month -= months_delta
     new_year, new_month0 = divmod(absolute_month, 12)
     return new_year, new_month0 + 1
 
 
+def replace_numeric_field(raw_field: str, new_value: int) -> str:
+    quote_char = ""
+    inner = raw_field
+    if len(raw_field) >= 2 and raw_field[0] == raw_field[-1] and raw_field[0] in ('"', "'"):
+        quote_char = raw_field[0]
+        inner = raw_field[1:-1]
+
+    stripped = inner.strip()
+
+    if stripped:
+        leading_len = len(inner) - len(inner.lstrip())
+        trailing_len = len(inner) - len(inner.rstrip())
+        leading_ws = inner[:leading_len]
+        trailing_ws = inner[len(inner) - trailing_len:] if trailing_len else ""
+    else:
+        leading_ws = inner
+        trailing_ws = ""
+
+    width = len(stripped)
+    if stripped.startswith("0") and len(stripped) > 1:
+        new_str = str(new_value).zfill(width)
+    else:
+        new_str = str(new_value)
+
+    return f"{quote_char}{leading_ws}{new_str}{trailing_ws}{quote_char}"
+
+
 def process_file(input_path: Path, output_path: Path, months_delta: int) -> str:
-    """Elabora un singolo file. Ritorna una stringa di esito da stampare."""
-    raw_bytes = input_path.read_bytes()
-    line_ending = detect_line_ending(raw_bytes)
+    text, encoding = read_text_preserving_encoding(input_path)
+    lines = text.splitlines(keepends=True)
 
-    with input_path.open("r", newline="", encoding="utf-8-sig") as f:
-        sample = f.read(4096)
-        f.seek(0)
-        delimiter = detect_delimiter(sample)
-        quoting = detect_quoting(sample)
-        rows = list(csv.reader(f, delimiter=delimiter))
-
-    if not rows:
+    if not lines:
         return "NO - file vuoto"
 
-    header = rows[0]
-    data_rows = rows[1:]
-    normalized_header = [h.strip().upper() for h in header]
+    normalized_targets = set(REQUIRED_COLS)
 
-    required_cols = ["BIRTH_YEAR", "ENTRY_YEAR", "ENTRY_MONTH", "BIRTH_MONTH"]
-    missing = [c for c in required_cols if c not in normalized_header]
-    if missing:
-        return f"NO - colonne mancanti: {missing} (header trovato: {header})"
+    active_header_indices = None
+    active_delimiter = None
+    active_num_fields = None
 
-    idx_birth_year = normalized_header.index("BIRTH_YEAR")
-    idx_entry_year = normalized_header.index("ENTRY_YEAR")
-    idx_entry_month = normalized_header.index("ENTRY_MONTH")
-    idx_birth_month = normalized_header.index("BIRTH_MONTH")
+    out_lines = []
+    rows_modified = 0
+    header_found = False
 
-    idx_type_assured = (
-        normalized_header.index("TYPE_ASSURED")
-        if "TYPE_ASSURED" in normalized_header else None
-    )
+    for line in lines:
+        content, ending = split_line_ending(line)
 
-    new_rows = [header]
-
-    for row_num, row in enumerate(data_rows, start=2):
-        if not row or all(cell.strip() == "" for cell in row):
-            new_rows.append(row)
+        if content.strip() == "":
+            out_lines.append(line)
             continue
 
-        if len(row) != len(header):
-            return (f"NO - riga {row_num} ha {len(row)} campi, "
-                     f"attesi {len(header)}: {row}")
+        delim_try, score = detect_delimiter_for_line(content, normalized_targets)
 
-        new_row = list(row)
+        if delim_try is not None and score == len(REQUIRED_COLS):
+            fields = split_fields_raw(content, delim_try)
+            cleaned = [strip_quotes_and_space(f).upper() for f in fields]
+            idx_map = {}
+            for col in REQUIRED_COLS:
+                idx_map[col] = cleaned.index(col)
+            if TYPE_ASSURED_COL in cleaned:
+                idx_map[TYPE_ASSURED_COL] = cleaned.index(TYPE_ASSURED_COL)
+
+            active_header_indices = idx_map
+            active_delimiter = delim_try
+            active_num_fields = len(fields)
+            header_found = True
+
+            out_lines.append(line)
+            continue
+
+        if active_header_indices is None:
+            out_lines.append(line)
+            continue
+
+        fields = split_fields_raw(content, active_delimiter)
+
+        if len(fields) != active_num_fields:
+            out_lines.append(line)
+            continue
+
         try:
-            entry_year = int(row[idx_entry_year].strip())
-            entry_month = int(row[idx_entry_month].strip())
-            birth_year = int(row[idx_birth_year].strip())
-            birth_month = int(row[idx_birth_month].strip())
-        except ValueError as e:
-            return f"NO - riga {row_num}: valore non numerico ({e})"
-
-        new_entry_year, new_entry_month = shift_year_month(entry_year, entry_month, months_delta)
-        new_row[idx_entry_year] = str(new_entry_year)
-        new_row[idx_entry_month] = str(new_entry_month)
+            entry_year = int(strip_quotes_and_space(fields[active_header_indices["ENTRY_YEAR"]]))
+            entry_month = int(strip_quotes_and_space(fields[active_header_indices["ENTRY_MONTH"]]))
+            birth_year = int(strip_quotes_and_space(fields[active_header_indices["BIRTH_YEAR"]]))
+            birth_month = int(strip_quotes_and_space(fields[active_header_indices["BIRTH_MONTH"]]))
+        except ValueError:
+            out_lines.append(line)
+            continue
 
         skip_birth = False
-        if idx_type_assured is not None:
-            type_assured_val = row[idx_type_assured].strip()
-            if type_assured_val == "1":
+        if TYPE_ASSURED_COL in active_header_indices:
+            ta_raw = strip_quotes_and_space(fields[active_header_indices[TYPE_ASSURED_COL]])
+            if ta_raw == "1":
                 skip_birth = True
+
+        new_entry_year, new_entry_month = shift_year_month(entry_year, entry_month, months_delta)
+        fields[active_header_indices["ENTRY_YEAR"]] = replace_numeric_field(
+            fields[active_header_indices["ENTRY_YEAR"]], new_entry_year)
+        fields[active_header_indices["ENTRY_MONTH"]] = replace_numeric_field(
+            fields[active_header_indices["ENTRY_MONTH"]], new_entry_month)
 
         if not skip_birth:
             new_birth_year, new_birth_month = shift_year_month(birth_year, birth_month, months_delta)
-            new_row[idx_birth_year] = str(new_birth_year)
-            new_row[idx_birth_month] = str(new_birth_month)
+            fields[active_header_indices["BIRTH_YEAR"]] = replace_numeric_field(
+                fields[active_header_indices["BIRTH_YEAR"]], new_birth_year)
+            fields[active_header_indices["BIRTH_MONTH"]] = replace_numeric_field(
+                fields[active_header_indices["BIRTH_MONTH"]], new_birth_month)
 
-        new_rows.append(new_row)
+        new_content = active_delimiter.join(fields)
+        out_lines.append(new_content + ending)
+        rows_modified += 1
 
-    ends_with_newline = raw_bytes.endswith(b"\n") or raw_bytes.endswith(b"\r")
+    if not header_found:
+        return f"NO - intestazione non trovata (colonne richieste: {REQUIRED_COLS})"
+
+    new_text = "".join(out_lines)
 
     tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
-    with tmp_path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f, delimiter=delimiter, quoting=quoting,
-                             lineterminator=line_ending)
-        writer.writerows(new_rows)
-
-    if not ends_with_newline:
-        content = tmp_path.read_bytes()
-        le_bytes = line_ending.encode()
-        if content.endswith(le_bytes):
-            content = content[: -len(le_bytes)]
-            tmp_path.write_bytes(content)
-
+    tmp_path.write_bytes(new_text.encode(encoding if encoding != "utf-8-sig" else "utf-8"))
     tmp_path.replace(output_path)
 
-    quoting_label = "con virgolette" if quoting == csv.QUOTE_ALL else "senza virgolette forzate"
-    return (f"fatto (delimitatore: {delimiter!r}, {quoting_label}, "
-            f"a capo: {line_ending!r}, {len(data_rows)} righe)")
+    return f"fatto ({rows_modified} righe modificate, encoding: {encoding})"
 
 
 def main():
