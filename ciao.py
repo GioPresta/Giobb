@@ -1,239 +1,307 @@
-def detect_header(content):
-
-    for delimiter in DELIMITER_CANDIDATES:
-
-        fields = split_fields_raw(
-            content,
-            delimiter
-        )
+        indi_q126, mg_q126 = reference[prodotto]
 
 
-        cleaned = [
-            strip_quotes_and_space(x).upper()
-            for x in fields
+        indi_q226 = fields[
+            header[1]["INDI_CURVA"]
         ]
 
 
-        score = sum(
-            1
-            for col in REQUIRED_COLS
-            if col in cleaned
+        mg_q226 = fields[
+            header[1]["MG_CURVA"]
+        ]
+
+
+
+        # confronto Q226 contro Q126
+
+        stesso_indi = (
+            strip_quotes_and_space(indi_q226)
+            ==
+            strip_quotes_and_space(indi_q126)
         )
 
 
-        if score == len(REQUIRED_COLS):
-
-            indexes = {}
-
-            for col in REQUIRED_COLS:
-
-                indexes[col] = cleaned.index(col)
-
-
-            return (
-                delimiter,
-                indexes,
-                len(fields)
-            )
-
-
-    return None
+        stesso_mg = (
+            strip_quotes_and_space(mg_q226)
+            ==
+            strip_quotes_and_space(mg_q126)
+        )
 
 
 
-def load_reference(file_path):
+        # Se già uguali:
+        # lascio la riga originale identica
 
-    """
-    Legge Q126.
+        if stesso_indi and stesso_mg:
 
-    Crea:
 
-    {
-        PRODOTTO:
-            (
-              INDI_CURVA,
-              MG_CURVA
-            )
-    }
-    """
+            unchanged += 1
 
-    text, encoding = read_text_preserving_encoding(
-        file_path
+            output.append(line)
+
+            continue
+
+
+
+
+        # Altrimenti sostituisco
+
+        fields[
+            header[1]["INDI_CURVA"]
+        ] = indi_q126
+
+
+
+        fields[
+            header[1]["MG_CURVA"]
+        ] = mg_q126
+
+
+
+
+        new_content = header[0].join(fields)
+
+
+        output.append(
+            new_content + ending
+        )
+
+
+        modified += 1
+
+
+
+
+    output_file.write_bytes(
+
+        "".join(output).encode(
+
+            encoding
+            if encoding != "utf-8-sig"
+            else "utf-8"
+
+        )
+
     )
 
 
-    lines = text.splitlines()
 
-
-    header = None
-
-    reference = {}
-
-
-    for line in lines:
-
-
-        if not line.strip():
-            continue
+    return (
+        modified,
+        unchanged,
+        not_found
+    )
 
 
 
-        if header is None:
-
-            header = detect_header(line)
-
-            continue
 
 
+def main():
 
-        fields = split_fields_raw(
-            line,
-            header[0]
+
+    base = get_script_dir()
+
+
+
+    q126 = base / SOURCE_FOLDER
+
+    q226 = base / TARGET_FOLDER
+
+    results = base / RESULT_FOLDER
+
+
+
+
+
+    if not q126.exists():
+
+        print(
+            "ERRORE: cartella Q126 non trovata"
+        )
+
+        return
+
+
+
+    if not q226.exists():
+
+        print(
+            "ERRORE: cartella Q226 non trovata"
+        )
+
+        return
+
+
+
+
+    results.mkdir(
+        exist_ok=True
+    )
+
+
+
+
+    files = sorted(
+        q126.glob("*" + EXTENSION)
+    )
+
+
+
+    print(
+        f"Trovati {len(files)} file in Q126"
+    )
+
+
+
+    elaborati = 0
+
+    mancanti = 0
+
+
+
+
+    for source_file in files:
+
+
+
+        target_file = (
+            q226 /
+            source_file.name
         )
 
 
 
-        if len(fields) != header[2]:
+
+        if not target_file.exists():
+
+
+            print(
+                f"\n{source_file.name}: "
+                "NON PRESENTE in Q226"
+            )
+
+
+            mancanti += 1
 
             continue
+
+
+
+
+
+        print(
+            "\n=============================="
+        )
+
+
+        print(
+            "File:",
+            source_file.name
+        )
 
 
 
         try:
 
-            prodotto = strip_quotes_and_space(
-                fields[
-                    header[1]["PRODOTTO"]
-                ]
+
+
+            reference = load_reference(
+                source_file
             )
 
 
-            indi = fields[
-                header[1]["INDI_CURVA"]
-            ]
 
-
-            mg = fields[
-                header[1]["MG_CURVA"]
-            ]
+            output_file = (
+                results /
+                source_file.name
+            )
 
 
 
-            if prodotto not in reference:
-
-                reference[prodotto] = (
-                    indi,
-                    mg
-                )
-
-
-        except Exception:
-
-            continue
+            modified, unchanged, not_found = process_target(
+                target_file,
+                output_file,
+                reference
+            )
 
 
 
-    return reference
+            print(
+                "Prodotti caricati da Q126:",
+                len(reference)
+            )
+
+
+            print(
+                "Righe modificate:",
+                modified
+            )
+
+
+            print(
+                "Righe già corrette (non modificate):",
+                unchanged
+            )
+
+
+            print(
+                "Prodotti non trovati in Q126:",
+                not_found
+            )
+
+
+            print(
+                "Creato:",
+                output_file.name
+            )
 
 
 
-def process_target(
-        input_file,
-        output_file,
-        reference):
+            elaborati += 1
 
 
-    text, encoding = read_text_preserving_encoding(
-        input_file
+
+        except Exception as e:
+
+
+            print(
+                "ERRORE:",
+                e
+            )
+
+
+
+
+    print(
+        "\n=============================="
+    )
+
+    print(
+        "FINE ELABORAZIONE"
+    )
+
+    print(
+        "File elaborati:",
+        elaborati
+    )
+
+    print(
+        "File mancanti:",
+        mancanti
+    )
+
+    print(
+        "Cartella risultati:",
+        results
+    )
+
+    print(
+        "=============================="
     )
 
 
-    lines = text.splitlines(
-        keepends=True
-    )
 
 
-    header = None
+if __name__ == "__main__":
 
-
-    output = []
-
-
-
-    modified = 0
-
-    unchanged = 0
-
-    not_found = 0
-
-
-
-    for line in lines:
-
-
-        content, ending = split_line_ending(line)
-
-
-
-        if not content.strip():
-
-            output.append(line)
-
-            continue
-
-
-
-
-        if header is None:
-
-
-            found = detect_header(content)
-
-
-            if found:
-
-                header = found
-
-
-
-            output.append(line)
-
-            continue
-
-
-
-
-
-        fields = split_fields_raw(
-            content,
-            header[0]
-        )
-
-
-
-        if len(fields) != header[2]:
-
-            output.append(line)
-
-            continue
-
-
-
-
-        prodotto = strip_quotes_and_space(
-            fields[
-                header[1]["PRODOTTO"]
-            ]
-        )
-
-
-
-
-        if prodotto not in reference:
-
-
-            not_found += 1
-
-            output.append(line)
-
-            continue
+    main()
