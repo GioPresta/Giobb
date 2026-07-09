@@ -4,36 +4,41 @@
 """
 compare_curve.py
 
-Confronta file .rpt omonimi tra:
+Confronta file .rpt omonimi:
 
-Q126/
-Q226/
+Q126  --->  Q226
 
-Usa PRODOTTO come chiave.
+Usa:
+    PRODOTTO
 
 Da Q126 prende:
     INDI_CURVA
     MG_CURVA
 
-Su Q226:
-    - se INDI_CURVA e MG_CURVA sono uguali:
-        lascia la riga originale
-
-    - se almeno uno è diverso:
-        sostituisce solo quei due campi con i valori di Q126
+In Q226:
+    - se uguali -> lascia la riga identica
+    - se diversi -> sostituisce solo i due campi
 
 
 Output:
-    Results/
+
+Results/
+    file.rpt
+    LOG_MODIFICHE.txt
 
 
-Approccio FORMAT PRESERVING:
-- non usa csv
-- mantiene encoding
-- mantiene delimitatore
-- mantiene virgolette
-- mantiene spazi
-- modifica solo INDI_CURVA e MG_CURVA
+Il log contiene:
+    - prodotto modificato
+    - valore precedente
+    - valore nuovo
+
+
+FORMAT PRESERVING:
+    - niente csv
+    - mantiene encoding
+    - mantiene separatori
+    - mantiene virgolette
+    - mantiene spazi
 """
 
 
@@ -46,9 +51,9 @@ from pathlib import Path
 
 EXTENSION = ".rpt"
 
-FOLDER_Q126 = "Q126"
-FOLDER_Q226 = "Q226"
-FOLDER_RESULTS = "Results"
+Q126_FOLDER = "Q126"
+Q226_FOLDER = "Q226"
+RESULT_FOLDER = "Results"
 
 
 REQUIRED_COLS = [
@@ -84,6 +89,7 @@ def read_text_preserving_encoding(path):
 
     raw = path.read_bytes()
 
+
     for enc in (
         "utf-8-sig",
         "utf-8",
@@ -95,7 +101,7 @@ def read_text_preserving_encoding(path):
             return raw.decode(enc), enc
 
         except UnicodeDecodeError:
-            continue
+            pass
 
 
     return raw.decode("latin-1"), "latin-1"
@@ -155,7 +161,6 @@ def split_fields_raw(content, delimiter):
                     i += 1
 
                 else:
-
                     in_quotes = False
 
 
@@ -212,7 +217,7 @@ def strip_quotes_and_space(field):
 
     return f.strip()
 
-def detect_header_for_line(content):
+def detect_header(content):
 
     for delimiter in DELIMITER_CANDIDATES:
 
@@ -255,30 +260,24 @@ def detect_header_for_line(content):
 
 
 
-def load_q126_reference(file_path):
+
+def load_q126(file_path):
 
     """
-    Legge il file Q126.
+    Crea la mappa:
 
-    Restituisce:
-
-    {
-        PRODOTTO:
-            {
-              "INDI_CURVA": valore,
-              "MG_CURVA": valore
-            }
-    }
+    PRODOTTO:
+        INDI_CURVA
+        MG_CURVA
     """
+
 
     text, encoding = read_text_preserving_encoding(
         file_path
     )
 
 
-    lines = text.splitlines(
-        keepends=False
-    )
+    lines = text.splitlines()
 
 
     reference = {}
@@ -295,11 +294,10 @@ def load_q126_reference(file_path):
 
 
 
-        header = detect_header_for_line(line)
+        header = detect_header(line)
 
 
-        # gestione header ripetuti
-        if header is not None:
+        if header:
 
             active_header = header
 
@@ -346,9 +344,6 @@ def load_q126_reference(file_path):
 
 
 
-            # ogni prodotto ha sempre gli stessi valori
-            # salvo solo il primo trovato
-
             if prodotto not in reference:
 
                 reference[prodotto] = (
@@ -368,14 +363,17 @@ def load_q126_reference(file_path):
 
 
 
-def process_q226_file(
-        q226_file,
+
+
+def process_q226(
+        file_q226,
         output_file,
-        reference):
+        reference,
+        log_file):
 
 
     text, encoding = read_text_preserving_encoding(
-        q226_file
+        file_q226
     )
 
 
@@ -392,9 +390,13 @@ def process_q226_file(
 
     modified = 0
 
-    already_equal = 0
+    same = 0
 
-    not_found = 0
+    missing = 0
+
+
+
+    modifications = []
 
 
 
@@ -413,12 +415,12 @@ def process_q226_file(
 
 
 
-        header = detect_header_for_line(content)
+
+        header = detect_header(content)
 
 
 
-        # gestione header ripetuti Q226
-        if header is not None:
+        if header:
 
             active_header = header
 
@@ -442,7 +444,6 @@ def process_q226_file(
         )
 
 
-
         if len(fields) != active_header[2]:
 
             output.append(line)
@@ -451,38 +452,24 @@ def process_q226_file(
 
 
 
-        try:
-
-
-            prodotto = strip_quotes_and_space(
-                fields[
-                    active_header[1]["PRODOTTO"]
-                ]
-            )
-
-
-
-        except Exception:
-
-
-            output.append(line)
-
-            continue
+        prodotto = strip_quotes_and_space(
+            fields[
+                active_header[1]["PRODOTTO"]
+            ]
+        )
 
 
 
         if prodotto not in reference:
 
-            not_found += 1
+            missing += 1
 
             output.append(line)
 
             continue
 
 
-
         indi_q126, mg_q126 = reference[prodotto]
-
 
 
         indi_q226 = fields[
@@ -496,29 +483,27 @@ def process_q226_file(
 
 
 
-        # confronto Q226 contro Q126
-
-        same_indi = (
-            strip_quotes_and_space(indi_q226)
-            ==
+        stesso_indi = (
             strip_quotes_and_space(indi_q126)
+            ==
+            strip_quotes_and_space(indi_q226)
         )
 
 
-        same_mg = (
-            strip_quotes_and_space(mg_q226)
-            ==
+        stesso_mg = (
             strip_quotes_and_space(mg_q126)
+            ==
+            strip_quotes_and_space(mg_q226)
         )
 
 
 
         # già uguali:
-        # lascio la riga IDENTICA
+        # lascio la riga esattamente com'è
 
-        if same_indi and same_mg:
+        if stesso_indi and stesso_mg:
 
-            already_equal += 1
+            same += 1
 
             output.append(line)
 
@@ -526,12 +511,41 @@ def process_q226_file(
 
 
 
-        # diversi:
-        # sostituisco solo i due campi
+
+        # registro modifica
+
+        modifications.append(
+            {
+                "PRODOTTO": prodotto,
+
+                "INDI_VECCHIO":
+                    strip_quotes_and_space(
+                        indi_q226
+                    ),
+
+                "INDI_NUOVO":
+                    strip_quotes_and_space(
+                        indi_q126
+                    ),
+
+                "MG_VECCHIO":
+                    strip_quotes_and_space(
+                        mg_q226
+                    ),
+
+                "MG_NUOVO":
+                    strip_quotes_and_space(
+                        mg_q126
+                    )
+            }
+        )
+
+
 
         fields[
             active_header[1]["INDI_CURVA"]
         ] = indi_q126
+
 
 
         fields[
@@ -553,6 +567,7 @@ def process_q226_file(
 
 
 
+
     output_file.write_bytes(
 
         "".join(output).encode(
@@ -566,10 +581,67 @@ def process_q226_file(
     )
 
 
+
+    with open(
+        log_file,
+        "a",
+        encoding="utf-8"
+    ) as f:
+
+
+        f.write(
+            "\n==============================\n"
+        )
+
+        f.write(
+            f"FILE: {file_q226.name}\n"
+        )
+
+        f.write(
+            "==============================\n\n"
+        )
+
+
+
+        for item in modifications:
+
+
+            f.write(
+                f"PRODOTTO: {item['PRODOTTO']}\n"
+            )
+
+
+            f.write(
+                "INDI_CURVA\n"
+            )
+
+            f.write(
+                f"  Prima: {item['INDI_VECCHIO']}\n"
+            )
+
+            f.write(
+                f"  Dopo : {item['INDI_NUOVO']}\n\n"
+            )
+
+
+            f.write(
+                "MG_CURVA\n"
+            )
+
+            f.write(
+                f"  Prima: {item['MG_VECCHIO']}\n"
+            )
+
+            f.write(
+                f"  Dopo : {item['MG_NUOVO']}\n\n"
+            )
+
+
+
     return (
         modified,
-        already_equal,
-        not_found
+        same,
+        missing
     )
 
 
@@ -578,57 +650,64 @@ def process_q226_file(
 
 def main():
 
+
     base = get_script_dir()
 
 
-    q126_folder = base / FOLDER_Q126
+    q126_folder = base / Q126_FOLDER
 
-    q226_folder = base / FOLDER_Q226
+    q226_folder = base / Q226_FOLDER
 
-    results_folder = base / FOLDER_RESULTS
+    results = base / RESULT_FOLDER
 
 
 
-    results_folder.mkdir(
+    results.mkdir(
         exist_ok=True
     )
 
 
 
-    q126_files = sorted(
-        q126_folder.glob("*" + EXTENSION)
+    log_file = (
+        results /
+        "LOG_MODIFICHE.txt"
     )
 
 
+    with open(
+        log_file,
+        "w",
+        encoding="utf-8"
+    ) as f:
 
-    print(
-        f"Trovati {len(q126_files)} file in Q126"
-    )
-
-
-
-    total_modified = 0
-
-    total_equal = 0
-
-    total_not_found = 0
-
-
-
-    for q126_file in q126_files:
-
-
-        q226_file = (
-            q226_folder /
-            q126_file.name
+        f.write(
+            "LOG MODIFICHE INDI_CURVA MG_CURVA\n"
         )
 
 
 
-        if not q226_file.exists():
+    files = sorted(
+        q126_folder.glob(
+            "*" + EXTENSION
+        )
+    )
+
+
+
+    for file_q126 in files:
+
+
+        file_q226 = (
+            q226_folder /
+            file_q126.name
+        )
+
+
+
+        if not file_q226.exists():
 
             print(
-                f"\n{q126_file.name}: "
+                file_q126.name,
                 "manca in Q226"
             )
 
@@ -637,101 +716,56 @@ def main():
 
 
         print(
-            "\n=============================="
-        )
-
-        print(
-            "FILE:",
-            q126_file.name
+            "\nFILE:",
+            file_q126.name
         )
 
 
 
-        reference = load_q126_reference(
-            q126_file
+        reference = load_q126(
+            file_q126
         )
 
 
 
-        output_file = (
-            results_folder /
-            q126_file.name
-        )
-
-
-
-        modified, equal, not_found = process_q226_file(
-            q226_file,
-            output_file,
-            reference
+        modified, same, missing = process_q226(
+            file_q226,
+            results / file_q226.name,
+            reference,
+            log_file
         )
 
 
 
         print(
-            "Prodotti caricati da Q126:",
+            "Prodotti caricati:",
             len(reference)
         )
 
-
         print(
-            "Righe modificate:",
+            "Modificati:",
             modified
         )
 
+        print(
+            "Già uguali:",
+            same
+        )
 
         print(
-            "Righe già uguali:",
-            equal
+            "Non trovati:",
+            missing
         )
 
 
-        print(
-            "Prodotti non trovati:",
-            not_found
-        )
-
-
-
-        total_modified += modified
-
-        total_equal += equal
-
-        total_not_found += not_found
-
-
-
 
     print(
-        "\n=============================="
+        "\nFine elaborazione"
     )
 
     print(
-        "FINE"
-    )
-
-    print(
-        "Totale righe modificate:",
-        total_modified
-    )
-
-    print(
-        "Totale righe già uguali:",
-        total_equal
-    )
-
-    print(
-        "Totale prodotti non trovati:",
-        total_not_found
-    )
-
-    print(
-        "Output:",
-        results_folder
-    )
-
-    print(
-        "=============================="
+        "Log creato:",
+        log_file
     )
 
 
