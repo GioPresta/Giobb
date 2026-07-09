@@ -4,32 +4,33 @@
 """
 copy_curve.py
 
-Legge i file .rpt presenti in Q126 e Q226.
+COPIA INDI_CURVA e MG_CURVA da Q126 verso Q226
+usando PRODOTTO come chiave.
 
-Per ogni file con lo stesso nome:
-- prende da Q126 la relazione:
+Struttura:
 
-    PRODOTTO -> INDI_CURVA, MG_CURVA
+cartella_script/
+│
+├── copy_curve.py
+├── Q126/
+│   ├── file1.rpt
+│   └── file2.rpt
+│
+├── Q226/
+│   ├── file1.rpt
+│   └── file2.rpt
+│
+└── Results/
+    └── output .rpt
 
-- sostituisce in Q226 i valori:
-    INDI_CURVA
-    MG_CURVA
-
-- salva il risultato nella cartella Results
 
 Approccio FORMAT PRESERVING:
-non usa csv, non riscrive il file con normalizzazioni.
-Mantiene:
-- encoding
-- delimitatori
-- virgolette
-- spazi
-- zeri iniziali
-- struttura del file
-
-Modifica solamente:
-INDI_CURVA
-MG_CURVA
+- non usa csv
+- mantiene encoding
+- mantiene delimitatore
+- mantiene virgolette
+- mantiene spazi
+- modifica solo INDI_CURVA e MG_CURVA
 """
 
 
@@ -50,15 +51,22 @@ REQUIRED_COLS = [
     "MG_CURVA"
 ]
 
-DELIMITER_CANDIDATES = [",", ";", "\t", "|"]
+DELIMITER_CANDIDATES = [
+    ",",
+    ";",
+    "\t",
+    "|"
+]
 
 # ==================================================
 
 
 
 def get_script_dir():
+
     try:
         return Path(__file__).resolve().parent
+
     except NameError:
         return Path.cwd()
 
@@ -68,11 +76,19 @@ def read_text_preserving_encoding(path):
 
     raw = path.read_bytes()
 
-    for enc in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+    for enc in (
+        "utf-8-sig",
+        "utf-8",
+        "cp1252",
+        "latin-1"
+    ):
+
         try:
             return raw.decode(enc), enc
+
         except UnicodeDecodeError:
-            pass
+            continue
+
 
     return raw.decode("latin-1"), "latin-1"
 
@@ -96,29 +112,44 @@ def split_line_ending(line):
 def split_fields_raw(content, delimiter):
 
     fields = []
+
     current = []
 
     in_quotes = False
+
     quote_char = None
 
+
     i = 0
+
 
     while i < len(content):
 
         c = content[i]
 
+
         if in_quotes:
 
             current.append(c)
 
+
             if c == quote_char:
 
-                if i + 1 < len(content) and content[i + 1] == quote_char:
-                    current.append(content[i + 1])
+                if (
+                    i + 1 < len(content)
+                    and content[i + 1] == quote_char
+                ):
+
+                    current.append(
+                        content[i + 1]
+                    )
+
                     i += 1
 
                 else:
+
                     in_quotes = False
+
 
         else:
 
@@ -126,21 +157,31 @@ def split_fields_raw(content, delimiter):
 
                 in_quotes = True
                 quote_char = c
+
                 current.append(c)
+
 
             elif c == delimiter:
 
-                fields.append("".join(current))
+                fields.append(
+                    "".join(current)
+                )
+
                 current = []
+
 
             else:
 
                 current.append(c)
 
+
         i += 1
 
 
-    fields.append("".join(current))
+    fields.append(
+        "".join(current)
+    )
+
 
     return fields
 
@@ -150,133 +191,82 @@ def strip_quotes_and_space(field):
 
     f = field.strip()
 
+
     if len(f) >= 2:
 
-        if f[0] == f[-1] and f[0] in ('"', "'"):
+        if (
+            f[0] == f[-1]
+            and f[0] in ('"', "'")
+        ):
+
             f = f[1:-1]
+
 
     return f.strip()
 
 
 
-def detect_delimiter(content):
+def detect_header(content):
 
-    best = None
-    best_score = -1
+    for delimiter in DELIMITER_CANDIDATES:
 
-    targets = set(REQUIRED_COLS)
+        fields = split_fields_raw(
+            content,
+            delimiter
+        )
 
-    for d in DELIMITER_CANDIDATES:
-
-        fields = split_fields_raw(content, d)
 
         cleaned = [
             strip_quotes_and_space(x).upper()
             for x in fields
         ]
 
+
         score = sum(
-            1 for x in targets if x in cleaned
+            1
+            for col in REQUIRED_COLS
+            if col in cleaned
         )
 
-        if score > best_score:
 
-            best_score = score
-            best = d
+        if score == len(REQUIRED_COLS):
+
+            indexes = {}
+
+            for col in REQUIRED_COLS:
+
+                indexes[col] = cleaned.index(col)
 
 
-    if best_score == len(REQUIRED_COLS):
-        return best
+            return (
+                delimiter,
+                indexes,
+                len(fields)
+            )
+
 
     return None
-
-
-
-def replace_field_value(raw_field, new_value):
-
-    quote = ""
-
-    inner = raw_field
-
-
-    if len(raw_field) >= 2:
-
-        if raw_field[0] == raw_field[-1]:
-            if raw_field[0] in ('"', "'"):
-
-                quote = raw_field[0]
-                inner = raw_field[1:-1]
-
-
-    leading = len(inner) - len(inner.lstrip())
-    trailing = len(inner) - len(inner.rstrip())
-
-
-    left_space = inner[:leading]
-
-    right_space = ""
-
-    if trailing:
-        right_space = inner[len(inner)-trailing:]
-
-
-    return (
-        quote
-        + left_space
-        + str(new_value)
-        + right_space
-        + quote
-    )
-
-
-
-def find_header(content):
-
-    delimiter = detect_delimiter(content)
-
-    if delimiter is None:
-        return None
-
-
-    fields = split_fields_raw(content, delimiter)
-
-
-    cleaned = [
-        strip_quotes_and_space(x).upper()
-        for x in fields
-    ]
-
-
-    indexes = {}
-
-    for col in REQUIRED_COLS:
-
-        if col not in cleaned:
-            return None
-
-        indexes[col] = cleaned.index(col)
-
-
-    return delimiter, indexes, len(fields)
-
-
 
 def load_reference(file_path):
 
     """
-    Legge Q126 e crea:
+    Legge Q126 e crea il dizionario:
 
     PRODOTTO:
         INDI_CURVA
         MG_CURVA
     """
 
-    text, encoding = read_text_preserving_encoding(file_path)
+    text, encoding = read_text_preserving_encoding(
+        file_path
+    )
+
 
     lines = text.splitlines()
 
 
     header = None
+
     reference = {}
 
 
@@ -288,7 +278,7 @@ def load_reference(file_path):
 
         if header is None:
 
-            header = find_header(line)
+            header = detect_header(line)
 
             continue
 
@@ -306,7 +296,9 @@ def load_reference(file_path):
         try:
 
             prodotto = strip_quotes_and_space(
-                fields[header[1]["PRODOTTO"]]
+                fields[
+                    header[1]["PRODOTTO"]
+                ]
             )
 
 
@@ -320,6 +312,9 @@ def load_reference(file_path):
             ]
 
 
+            # stesso prodotto può ripetersi migliaia di volte,
+            # salvo solo il primo valore trovato
+
             if prodotto not in reference:
 
                 reference[prodotto] = (
@@ -329,6 +324,7 @@ def load_reference(file_path):
 
 
         except Exception:
+
             continue
 
 
@@ -354,10 +350,9 @@ def process_target(
 
     header = None
 
-    modified = 0
-
-
     output = []
+
+    modified = 0
 
 
     for line in lines:
@@ -374,13 +369,16 @@ def process_target(
 
         if header is None:
 
-            found = find_header(content)
+            found = detect_header(content)
+
 
             if found:
 
                 header = found
 
+
             output.append(line)
+
             continue
 
 
@@ -394,7 +392,9 @@ def process_target(
         if len(fields) != header[2]:
 
             output.append(line)
+
             continue
+
 
 
         prodotto = strip_quotes_and_space(
@@ -404,40 +404,86 @@ def process_target(
         )
 
 
-        if prodotto in reference:
 
-            indi, mg = reference[prodotto]
-
-
-            fields[
-                header[1]["INDI_CURVA"]
-            ] = indi
-
-
-            fields[
-                header[1]["MG_CURVA"]
-            ] = mg
-
-
-            modified += 1
-
-
-            new_content = header[0].join(fields)
-
-            output.append(
-                new_content + ending
-            )
-
-
-        else:
+        if prodotto not in reference:
 
             output.append(line)
+
+            continue
+
+
+
+        indi_q126, mg_q126 = reference[prodotto]
+
+
+
+        indi_q226 = fields[
+            header[1]["INDI_CURVA"]
+        ]
+
+
+        mg_q226 = fields[
+            header[1]["MG_CURVA"]
+        ]
+
+
+
+        # controllo se sono già uguali
+
+        stesso_indi = (
+            strip_quotes_and_space(indi_q226)
+            ==
+            strip_quotes_and_space(indi_q126)
+        )
+
+
+        stesso_mg = (
+            strip_quotes_and_space(mg_q226)
+            ==
+            strip_quotes_and_space(mg_q126)
+        )
+
+
+
+        # se già uguali lascio la riga originale
+
+        if stesso_indi and stesso_mg:
+
+            output.append(line)
+
+            continue
+
+
+
+        # altrimenti sostituisco
+
+        fields[
+            header[1]["INDI_CURVA"]
+        ] = indi_q126
+
+
+        fields[
+            header[1]["MG_CURVA"]
+        ] = mg_q126
+
+
+
+        new_content = header[0].join(fields)
+
+
+        output.append(
+            new_content + ending
+        )
+
+
+        modified += 1
 
 
 
     output_file.write_bytes(
         "".join(output).encode(
-            encoding if encoding != "utf-8-sig"
+            encoding
+            if encoding != "utf-8-sig"
             else "utf-8"
         )
     )
@@ -453,8 +499,31 @@ def main():
 
 
     q126 = base / SOURCE_FOLDER
+
     q226 = base / TARGET_FOLDER
+
     results = base / RESULT_FOLDER
+
+
+
+    if not q126.exists():
+
+        print(
+            "ERRORE: cartella Q126 non trovata"
+        )
+
+        return
+
+
+
+    if not q226.exists():
+
+        print(
+            "ERRORE: cartella Q226 non trovata"
+        )
+
+        return
+
 
 
     results.mkdir(
@@ -462,43 +531,56 @@ def main():
     )
 
 
+
     files = sorted(
         q126.glob("*" + EXTENSION)
     )
 
 
+
     print(
-        f"Trovati {len(files)} file in Q126\n"
+        f"Trovati {len(files)} file in Q126"
     )
 
 
+
     ok = 0
+
     missing = 0
+
 
 
     for source_file in files:
 
 
-        target_file = q226 / source_file.name
+        target_file = (
+            q226 / source_file.name
+        )
+
 
 
         if not target_file.exists():
 
             print(
-                f"{source_file.name}: manca in Q226"
+                f"{source_file.name}: "
+                "manca in Q226"
             )
 
             missing += 1
+
             continue
 
 
 
         print(
-            f"\nElaboro {source_file.name}"
+            "\nElaboro:",
+            source_file.name
         )
 
 
+
         try:
+
 
             reference = load_reference(
                 source_file
@@ -506,7 +588,8 @@ def main():
 
 
             output_file = (
-                results / source_file.name
+                results /
+                source_file.name
             )
 
 
@@ -517,36 +600,58 @@ def main():
             )
 
 
-            print(
-                f"  Prodotti caricati: {len(reference)}"
-            )
 
             print(
-                f"  Righe modificate: {modified}"
+                "  Prodotti caricati:",
+                len(reference)
+            )
+
+
+            print(
+                "  Righe realmente modificate:",
+                modified
             )
 
 
             ok += 1
 
 
+
         except Exception as e:
 
+
             print(
-                f"  ERRORE: {e}"
+                "  ERRORE:",
+                e
             )
 
 
 
-    print("\n==============================")
     print(
-        f"Completato: {ok} file elaborati"
+        "\n=============================="
     )
+
     print(
-        f"File mancanti: {missing}"
+        "File elaborati:",
+        ok
     )
-    print("==============================")
+
+    print(
+        "File mancanti:",
+        missing
+    )
+
+    print(
+        "Output:",
+        results
+    )
+
+    print(
+        "=============================="
+    )
 
 
 
 if __name__ == "__main__":
+
     main()
