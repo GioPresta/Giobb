@@ -7,25 +7,20 @@ PENSATO PER SPYDER: mettilo nella STESSA CARTELLA dei file .rpt (o .fac)
 e lancialo con F5 (Run). Non servono argomenti da riga di comando.
 
 APPROCCIO "FORMAT PRESERVING":
-Questo script NON usa il modulo csv per riscrivere il file (che tende a
-normalizzare virgolette, spazi, zeri iniziali, ecc.). Invece:
-- legge il file riga per riga, byte per byte
-- riconosce la riga di intestazione cercando le colonne richieste
-- per ogni riga dati, individua SOLO i campi BIRTH_YEAR, BIRTH_MONTH,
-  ENTRY_YEAR, ENTRY_MONTH (ed eventualmente TYPE_ASSURED) e li sostituisce
-  con il nuovo valore, mantenendo identiche virgolette, zeri iniziali,
-  spazi interni ed eventuali blocchi/intestazioni ripetute nel file
-- tutte le altre righe (metadati, righe vuote, altre intestazioni,
-  altre colonne) restano ESATTAMENTE come nell'originale, carattere per
-  carattere, incluso il tipo di "a capo" (CRLF/LF) e l'eventuale assenza
-  di newline finale
+Non usa il modulo csv per riscrivere il file (che normalizza virgolette,
+spazi, zeri iniziali, ecc.). Invece legge il file riga per riga e modifica
+SOLO i campi BIRTH_YEAR, BIRTH_MONTH, ENTRY_YEAR, ENTRY_MONTH, lasciando
+tutto il resto del file (altre colonne, virgolette, delimitatori, a-capo,
+eventuali righe di metadati/intestazioni ripetute) ESATTAMENTE come
+nell'originale.
 
 Logica di retrodatazione (anno e mese ragionati insieme):
     ENTRY_YEAR 2026, ENTRY_MONTH 3  ->  ENTRY_YEAR 2025, ENTRY_MONTH 9
     BIRTH_YEAR 1973, BIRTH_MONTH 1  ->  BIRTH_YEAR 1972, BIRTH_MONTH 7
 
-Se TYPE_ASSURED = 1 su una riga, BIRTH_YEAR/BIRTH_MONTH di quella riga
-NON vengono modificati.
+ECCEZIONE: se su una riga BIRTH_MONTH = 0, quella riga NON viene toccata
+per BIRTH_YEAR/BIRTH_MONTH (restano invariati). ENTRY_YEAR/ENTRY_MONTH
+vengono comunque retrodatati normalmente.
 
 Puoi cambiare le impostazioni qui sotto in CONFIGURAZIONE.
 """
@@ -39,7 +34,6 @@ MONTHS = 6
 OVERWRITE = True
 
 REQUIRED_COLS = ["BIRTH_YEAR", "ENTRY_YEAR", "ENTRY_MONTH", "BIRTH_MONTH"]
-TYPE_ASSURED_COL = "TYPE_ASSURED"
 
 DELIMITER_CANDIDATES = [",", ";", "\t", "|"]
 
@@ -142,7 +136,6 @@ def replace_numeric_field(raw_field: str, new_value: int) -> str:
         inner = raw_field[1:-1]
 
     stripped = inner.strip()
-
     if stripped:
         leading_len = len(inner) - len(inner.lstrip())
         trailing_len = len(inner) - len(inner.rstrip())
@@ -176,6 +169,7 @@ def process_file(input_path: Path, output_path: Path, months_delta: int) -> str:
 
     out_lines = []
     rows_modified = 0
+    rows_skipped_birth = 0
     header_found = False
 
     for line in lines:
@@ -193,15 +187,13 @@ def process_file(input_path: Path, output_path: Path, months_delta: int) -> str:
             idx_map = {}
             for col in REQUIRED_COLS:
                 idx_map[col] = cleaned.index(col)
-            if TYPE_ASSURED_COL in cleaned:
-                idx_map[TYPE_ASSURED_COL] = cleaned.index(TYPE_ASSURED_COL)
 
             active_header_indices = idx_map
             active_delimiter = delim_try
             active_num_fields = len(fields)
             header_found = True
 
-            out_lines.append(line)
+            out_lines.append(line)  # l'header resta invariato
             continue
 
         if active_header_indices is None:
@@ -223,11 +215,10 @@ def process_file(input_path: Path, output_path: Path, months_delta: int) -> str:
             out_lines.append(line)
             continue
 
-        skip_birth = False
-        if TYPE_ASSURED_COL in active_header_indices:
-            ta_raw = strip_quotes_and_space(fields[active_header_indices[TYPE_ASSURED_COL]])
-            if ta_raw == "1":
-                skip_birth = True
+        # ECCEZIONE: se BIRTH_MONTH = 0, non tocco BIRTH_YEAR/BIRTH_MONTH
+        skip_birth = (birth_month == 0)
+        if skip_birth:
+            rows_skipped_birth += 1
 
         new_entry_year, new_entry_month = shift_year_month(entry_year, entry_month, months_delta)
         fields[active_header_indices["ENTRY_YEAR"]] = replace_numeric_field(
@@ -255,7 +246,10 @@ def process_file(input_path: Path, output_path: Path, months_delta: int) -> str:
     tmp_path.write_bytes(new_text.encode(encoding if encoding != "utf-8-sig" else "utf-8"))
     tmp_path.replace(output_path)
 
-    return f"fatto ({rows_modified} righe modificate, encoding: {encoding})"
+    esito = f"fatto ({rows_modified} righe modificate, encoding: {encoding})"
+    if rows_skipped_birth:
+        esito += f" [BIRTH non toccato su {rows_skipped_birth} righe con BIRTH_MONTH=0]"
+    return esito
 
 
 def main():
