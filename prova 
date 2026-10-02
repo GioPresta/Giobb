@@ -1,0 +1,1 @@
+py -3.13 -m pip install spyder --user --trusted-host bigdata-repository.bp2i.echonet
