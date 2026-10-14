@@ -1,10 +1,759 @@
 
-# Se output esiste, crea una nuova cartella numerata
-cartella_base = Path("output")
-CARTELLA_OUTPUT = cartella_base
+from pathlib import Path
+from decimal import Decimal, ROUND_HALF_UP
+from collections import defaultdict
+from datetime import datetime
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
+import re
 
-numero_output = 2
+# ============================================================
+# 1. CONFIGURAZIONE
+# ============================================================
 
-while CARTELLA_OUTPUT.exists():
-    CARTELLA_OUTPUT = Path(f"output_{numero_output}")
-    numero_output += 1
+INPUT = Path("input")
+OUTPUT = Path("output")
+
+XLSX_ORIGINALI = OUTPUT / "xlsx_originali"
+XLSX_MODIFICATI = OUTPUT / "xlsx_modificati"
+
+PERCENTUALI = {
+    "PTEVPJ": Decimal("0.025034000"),
+    "PTEVPL_Z5": Decimal("0.025034000"),
+    "PTPVPI": Decimal("0.004571000"),
+    "PTPVPK": Decimal("0.004571000"),
+    "PTPMUG": Decimal("0.024120000"),
+    "PTEVPK": Decimal("0.031873501"),
+    "PTPVPL": Decimal("0.004464654"),
+    "PTQVPA": Decimal("0"),
+    "PTOP18": Decimal("0.004500000"),
+    "PTOP19": Decimal("0.004500000"),
+    "PTOP21": Decimal("0"),
+    "PTRVPA": Decimal("0.033802741"),
+    "PTPVPM": Decimal("0.004200000"),
+    "PTOP22": Decimal("0"),
+    "PTPVPN": Decimal("0.004710510"),
+}
+
+COLONNE_MU = [
+    f"MF_INIT_UNITS({i})" for i in range(1, 7)
+]
+
+# Non impone una larghezza massima al valore TOPUP_PREM.
+# Mantiene almeno 2 decimali.
+DECIMALI_MINIMI = 2
+
+MAX_RIGHE_EXCEL = 1048576
+
+# ============================================================
+# 2. FUNZIONI GENERALI
+# ============================================================
+
+def tipo_modelpoint(nome):
+    nome = nome.upper()
+    mo = "MO" in nome
+    mu = "MU" in nome
+
+    if mo and not mu:
+        return "MO"
+    if mu and not mo:
+        return "MU"
+
+    return None
+
+
+def decimale(testo):
+    testo = testo.strip()
+    if not testo:
+        return Decimal("0")
+    return Decimal(testo)
+
+
+def separa_riga(riga):
+    if riga.endswith(b"\r\n"):
+        return riga[:-2], b"\r\n"
+    if riga.endswith(b"\n"):
+        return riga[:-1], b"\n"
+    if riga.endswith(b"\r"):
+        return riga[:-1], b"\r"
+    return riga, b""
+
+
+def testo_campo(campo):
+    return campo.decode("utf-8").strip()
+
+
+def leggi_struttura(righe):
+    for i, riga in enumerate(righe):
+        contenuto, _ = separa_riga(riga)
+
+        nomi = [
+            testo_campo(x).upper()
+            for x in contenuto.split(b",")
+        ]
+
+        if "PRODOTTO" in nomi and "TOPUP_PREM" in nomi:
+            if len(nomi) != len(set(nomi)):
+                raise ValueError("Intestazioni duplicate")
+
+            return i, nomi
+
+    raise ValueError(
+        "Intestazione PRODOTTO/TOPUP_PREM non trovata"
+    )
+
+
+def formatta_valore(valore, originale):
+    originale = originale.strip()
+
+    if "." in originale:
+        decimali = len(originale.split(".")[-1])
+    else:
+        decimali = 0
+
+    decimali = max(decimali, DECIMALI_MINIMI)
+
+    quant = Decimal("1").scaleb(-decimali)
+
+    valore = valore.quantize(
+        quant, rounding=ROUND_HALF_UP
+    )
+
+    return f"{valore:.{decimali}f}", decimali
+
+
+def cambia_campo(originale, nuovo):
+    sinistra = len(originale) - len(
+        originale.lstrip(b" ")
+    )
+    destra = len(originale) - len(
+        originale.rstrip(b" ")
+    )
+
+    return (
+        b" " * sinistra
+        + nuovo.encode("ascii")
+        + b" " * destra
+    )
+
+
+def nome_report_libero(nome):
+    percorso = OUTPUT / nome
+    numero = 2
+
+    while percorso.exists():
+        percorso = OUTPUT / (
+            f"{Path(nome).stem}_{numero}"
+            f"{Path(nome).suffix}"
+        )
+        numero += 1
+
+    return percorso
+
+
+# ============================================================
+# 3. LETTURA E CALCOLO MODELPOINT
+# ============================================================
+
+def analizza_modelpoint(percorso):
+    tipo = tipo_modelpoint(percorso.stem)
+
+    if tipo is None:
+        raise ValueError(
+            "Nome ambiguo: impossibile distinguere MO/MU"
+        )
+
+    righe = percorso.read_bytes().splitlines(
+        keepends=True
+    )
+
+    header, colonne = leggi_struttura(righe)
+
+    richieste = ["PRODOTTO", "TOPUP_PREM"]
+
+    if tipo == "MO":
+        richieste.append("INIT_UNITS")
+    else:
+        richieste.extend(COLONNE_MU)
+
+    mancanti = [
+        x for x in richieste if x not in colonne
+    ]
+
+    if mancanti:
+        raise ValueError(
+            "Colonne mancanti: " + ", ".join(mancanti)
+        )
+
+    idx_prodotto = colonne.index("PRODOTTO")
+    idx_topup = colonne.index("TOPUP_PREM")
+
+    if tipo == "MO":
+        idx_units = [colonne.index("INIT_UNITS")]
+    else:
+        idx_units = [
+            colonne.index(x) for x in COLONNE_MU
+        ]
+
+    nuove_righe = list(righe)
+    dettagli = []
+    statistiche = defaultdict(
+        lambda: {
+            "righe": 0,
+            "prima": Decimal("0"),
+            "dopo": Decimal("0")
+        }
+    )
+
+    for i in range(header + 1, len(righe)):
+        contenuto, fine = separa_riga(righe[i])
+
+        if not contenuto.strip():
+            continue
+
+        campi = contenuto.split(b",")
+
+        if len(campi) != len(colonne):
+            raise ValueError(
+                f"Riga {i+1}: numero colonne non valido"
+            )
+
+        prodotto = testo_campo(campi[idx_prodotto])
+
+        if prodotto not in PERCENTUALI:
+            continue
+
+        try:
+            units = [
+                decimale(testo_campo(campi[j]))
+                for j in idx_units
+            ]
+
+            totale = sum(units, Decimal("0"))
+            percentuale = PERCENTUALI[prodotto]
+
+            campo_prima = testo_campo(
+                campi[idx_topup]
+            )
+
+            prima = decimale(campo_prima)
+            risultato = totale * percentuale
+
+            nuovo_testo, decimali = formatta_valore(
+                risultato, campo_prima
+            )
+
+            dopo = Decimal(nuovo_testo)
+
+            campi[idx_topup] = cambia_campo(
+                campi[idx_topup], nuovo_testo
+            )
+
+            nuove_righe[i] = (
+                b",".join(campi) + fine
+            )
+
+            dettagli.append({
+                "file": percorso.name,
+                "riga": i + 1,
+                "tipo": tipo,
+                "prodotto": prodotto,
+                "units": units,
+                "percentuale": percentuale,
+                "prima": prima,
+                "dopo": dopo,
+                "decimali": decimali
+            })
+
+            s = statistiche[prodotto]
+            s["righe"] += 1
+            s["prima"] += prima
+            s["dopo"] += dopo
+
+        except Exception as e:
+            raise ValueError(
+                f"Riga {i+1}, prodotto {prodotto}: {e}"
+            )
+
+    return b"".join(nuove_righe), dettagli, statistiche
+
+
+# ============================================================
+# 4. LETTURA TOPUP DAL RPT MODIFICATO
+# ============================================================
+
+def leggi_topup_nuovi(percorso, dettagli):
+    righe = percorso.read_bytes().splitlines(
+        keepends=True
+    )
+
+    header, colonne = leggi_struttura(righe)
+
+    idx_prodotto = colonne.index("PRODOTTO")
+    idx_topup = colonne.index("TOPUP_PREM")
+
+    valori = {}
+
+    for d in dettagli:
+        i = d["riga"] - 1
+
+        if i >= len(righe):
+            raise ValueError(
+                f"Riga {i+1} assente nel nuovo RPT"
+            )
+
+        contenuto, _ = separa_riga(righe[i])
+        campi = contenuto.split(b",")
+
+        if len(campi) != len(colonne):
+            raise ValueError(
+                f"Tracciato diverso alla riga {i+1}"
+            )
+
+        prodotto = testo_campo(campi[idx_prodotto])
+
+        if prodotto != d["prodotto"]:
+            raise ValueError(
+                f"Prodotto diverso alla riga {i+1}"
+            )
+
+        valori[d["riga"]] = decimale(
+            testo_campo(campi[idx_topup])
+        )
+
+    return valori
+
+
+# ============================================================
+# 5. CONVERSIONE RPT IN XLSX
+# ============================================================
+
+def valore_excel(testo, nome_colonna):
+    # I codici prodotto e i campi identificativi
+    # restano stringhe per non perdere zeri iniziali.
+    if nome_colonna == "PRODOTTO":
+        return testo
+
+    if re.fullmatch(
+        r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)",
+        testo
+    ):
+        # Evita conversioni di codici numerici lunghi
+        # che Excel potrebbe arrotondare.
+        if (
+            nome_colonna not in (
+                "INIT_UNITS", "TOPUP_PREM"
+            )
+            and not nome_colonna.startswith(
+                "MF_INIT_UNITS("
+            )
+        ):
+            return testo
+
+        return float(Decimal(testo))
+
+    return testo
+
+
+def converti_rpt_xlsx(rpt, destinazione):
+    righe = rpt.read_bytes().splitlines(
+        keepends=True
+    )
+
+    header, colonne = leggi_struttura(righe)
+
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet("MODELPOINT")
+
+    ws.append(colonne)
+    conta = 1
+
+    for riga in righe[header + 1:]:
+        contenuto, _ = separa_riga(riga)
+
+        if not contenuto.strip():
+            continue
+
+        campi = contenuto.split(b",")
+
+        if len(campi) != len(colonne):
+            raise ValueError(
+                "Tracciato non uniforme nella conversione"
+            )
+
+        record = [
+            valore_excel(
+                testo_campo(campo),
+                colonne[j]
+            )
+            for j, campo in enumerate(campi)
+        ]
+
+        if conta >= MAX_RIGHE_EXCEL:
+            raise ValueError(
+                "Il modelpoint supera il limite di "
+                "righe di un foglio Excel"
+            )
+
+        ws.append(record)
+        conta += 1
+
+    with destinazione.open("xb") as f:
+        wb.save(f)
+
+
+# ============================================================
+# 6. CREAZIONE EXCEL DI CHECK
+# ============================================================
+
+INTESTAZIONI = [
+    "MODELPOINT",
+    "RIGA RPT",
+    "TIPO",
+    "PRODOTTO",
+    "INIT_UNITS",
+    "MF_INIT_UNITS(1)",
+    "MF_INIT_UNITS(2)",
+    "MF_INIT_UNITS(3)",
+    "MF_INIT_UNITS(4)",
+    "MF_INIT_UNITS(5)",
+    "MF_INIT_UNITS(6)",
+    "TOTALE UNITS",
+    "% EJ",
+    "TOPUP ORIGINALE",
+    "CALCOLO EXCEL",
+    "TOPUP NUOVO RPT",
+    "DIFFERENZA",
+    "ESITO"
+]
+
+
+def crea_check(dettagli, destinazione):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "CHECK_CALCOLI"
+
+    ws.append(INTESTAZIONI)
+
+    for cella in ws[1]:
+        cella.font = Font(
+            bold=True, color="FFFFFF"
+        )
+        cella.fill = PatternFill(
+            "solid", fgColor="17365D"
+        )
+        cella.alignment = Alignment(
+            horizontal="center"
+        )
+
+    ws.freeze_panes = "E2"
+    ws.auto_filter.ref = "A1:R1"
+
+    larghezze = {
+        "A": 27, "B": 12, "C": 10,
+        "D": 18, "E": 18,
+        "F": 19, "G": 19, "H": 19,
+        "I": 19, "J": 19, "K": 19,
+        "L": 18, "M": 16, "N": 19,
+        "O": 19, "P": 19, "Q": 18,
+        "R": 14
+    }
+
+    for col, larghezza in larghezze.items():
+        ws.column_dimensions[col].width = larghezza
+
+    for d in dettagli:
+        if ws.max_row >= MAX_RIGHE_EXCEL:
+            raise ValueError(
+                "Troppe righe per CHECK_CALCOLI.xlsx"
+            )
+
+        r = ws.max_row + 1
+
+        if d["tipo"] == "MO":
+            init = float(d["units"][0])
+            multi = [None] * 6
+        else:
+            init = None
+            multi = [
+                float(x) for x in d["units"]
+            ]
+
+        ws.append([
+            d["file"],
+            d["riga"],
+            d["tipo"],
+            d["prodotto"],
+            init,
+            *multi,
+            None,
+            float(d["percentuale"]),
+            float(d["prima"]),
+            None,
+            float(d["effettivo"]),
+            None,
+            None
+        ])
+
+        # Totale delle unità
+        ws[f"L{r}"] = (
+            f'=IF(C{r}="MO",E{r},SUM(F{r}:K{r}))'
+        )
+
+        # Stessa precisione decimale del RPT
+        decimali = d["decimali"]
+
+        ws[f"O{r}"] = (
+            f"=ROUND(L{r}*M{r},{decimali})"
+        )
+
+        # Differenza
+        ws[f"Q{r}"] = f"=O{r}-P{r}"
+
+        # Esito
+        tolleranza = 0.5 * 10 ** (-decimali)
+
+        ws[f"R{r}"] = (
+            f'=IF(ABS(Q{r})<{tolleranza},'
+            f'"OK","ERRORE")'
+        )
+
+        ws[f"M{r}"].number_format = "0.0000000%"
+
+        for col in ["N", "O", "P", "Q"]:
+            ws[f"{col}{r}"].number_format = (
+                "0." + "0" * decimali
+            )
+
+    ws.auto_filter.ref = f"A1:R{ws.max_row}"
+
+    wb.calculation.fullCalcOnLoad = True
+    wb.calculation.forceFullCalc = True
+    wb.calculation.calcMode = "auto"
+
+    with destinazione.open("xb") as f:
+        wb.save(f)
+
+
+# ============================================================
+# 7. REPORT TXT SINTETICO
+# ============================================================
+
+def crea_report(
+    statistiche, errori, saltati,
+    elaborati, percorso
+):
+    with percorso.open("x", encoding="utf-8") as f:
+        f.write("REPORT MODIFICHE MODELPOINT\n")
+        f.write("=" * 55 + "\n")
+        f.write(
+            f"Data: {datetime.now():%d/%m/%Y %H:%M}\n"
+        )
+        f.write(f"Nuovi RPT creati: {elaborati}\n")
+        f.write(f"RPT gia' presenti: {saltati}\n")
+        f.write(f"Problemi: {len(errori)}\n\n")
+
+        for prodotto in sorted(PERCENTUALI):
+            elementi = statistiche.get(prodotto, [])
+
+            if not elementi:
+                continue
+
+            f.write("-" * 55 + "\n")
+            f.write(f"TARIFFA: {prodotto}\n")
+            f.write(
+                f"EJ: {PERCENTUALI[prodotto]*100}%\n"
+            )
+
+            totale = 0
+
+            for nome, tipo, s in elementi:
+                f.write(
+                    f"\n  MODELPOINT: {nome} ({tipo})\n"
+                )
+                f.write(
+                    f"  Righe: {s['righe']}\n"
+                )
+                f.write(
+                    f"  TOPUP prima: {s['prima']}\n"
+                )
+                f.write(
+                    f"  TOPUP dopo: {s['dopo']}\n"
+                )
+
+                totale += s["righe"]
+
+            f.write(
+                f"\n  TOTALE RIGHE: {totale}\n\n"
+            )
+
+        if errori:
+            f.write("\nPROBLEMI RISCONTRATI\n")
+            f.write("=" * 55 + "\n")
+
+            for nome, errore in errori:
+                f.write(f"\n{nome}\n{errore}\n")
+
+
+# ============================================================
+# 8. PROGRAMMA PRINCIPALE
+# ============================================================
+
+def main():
+    if not INPUT.is_dir():
+        print("ERRORE: cartella input assente.")
+        return
+
+    OUTPUT.mkdir(exist_ok=True)
+    XLSX_ORIGINALI.mkdir(exist_ok=True)
+    XLSX_MODIFICATI.mkdir(exist_ok=True)
+
+    files = sorted(
+        p for p in INPUT.rglob("*")
+        if p.is_file() and p.suffix.lower() == ".rpt"
+    )
+
+    if not files:
+        print("Nessun file .rpt trovato.")
+        return
+
+    statistiche = defaultdict(list)
+    dettagli_check = []
+    errori = []
+
+    saltati = 0
+    elaborati = 0
+
+    for file in files:
+        relativo = file.relative_to(INPUT)
+
+        rpt_nuovo = OUTPUT / relativo
+
+        xlsx_originale = (
+            XLSX_ORIGINALI / relativo
+        ).with_suffix(".xlsx")
+
+        xlsx_nuovo = (
+            XLSX_MODIFICATI / relativo
+        ).with_suffix(".xlsx")
+
+        for percorso in [
+            rpt_nuovo,
+            xlsx_originale,
+            xlsx_nuovo
+        ]:
+            percorso.parent.mkdir(
+                parents=True, exist_ok=True
+            )
+
+        print(f"\nMODELPOINT: {relativo}")
+
+        try:
+            nuovi_bytes, dettagli, stats = (
+                analizza_modelpoint(file)
+            )
+
+            creato_ora = False
+
+            if rpt_nuovo.exists():
+                saltati += 1
+                print("RPT gia' presente: non sovrascritto")
+
+            else:
+                # Crea il file solo se non esiste.
+                with rpt_nuovo.open("xb") as f:
+                    f.write(nuovi_bytes)
+
+                elaborati += 1
+                creato_ora = True
+                print("Nuovo RPT creato")
+
+            # Verifica i valori realmente presenti
+            # nel RPT della cartella output.
+            valori_effettivi = leggi_topup_nuovi(
+                rpt_nuovo, dettagli
+            )
+
+            for d in dettagli:
+                d["file"] = str(relativo)
+                d["effettivo"] = valori_effettivi[
+                    d["riga"]
+                ]
+
+            dettagli_check.extend(dettagli)
+
+            # Report delle sole nuove modifiche
+            if creato_ora:
+                tipo = tipo_modelpoint(file.stem)
+
+                for prodotto, s in stats.items():
+                    statistiche[prodotto].append(
+                        (str(relativo), tipo, s)
+                    )
+
+            # Excel originale
+            if not xlsx_originale.exists():
+                converti_rpt_xlsx(
+                    file, xlsx_originale
+                )
+                print("XLSX originale creato")
+
+            # Excel modificato
+            if not xlsx_nuovo.exists():
+                converti_rpt_xlsx(
+                    rpt_nuovo, xlsx_nuovo
+                )
+                print("XLSX modificato creato")
+
+        except Exception as e:
+            errori.append(
+                (str(relativo), str(e))
+            )
+            print(f"ATTENZIONE: {e}")
+
+    # Excel di controllo
+    percorso_check = nome_report_libero(
+        "CHECK_CALCOLI.xlsx"
+    )
+
+    if dettagli_check:
+        try:
+            crea_check(
+                dettagli_check, percorso_check
+            )
+            print(
+                f"\nCHECK creato: {percorso_check}"
+            )
+
+        except Exception as e:
+            errori.append(
+                ("CHECK_CALCOLI", str(e))
+            )
+            print(f"ERRORE CHECK: {e}")
+
+    # Report TXT
+    percorso_report = nome_report_libero(
+        "report_modifiche.txt"
+    )
+
+    crea_report(
+        statistiche,
+        errori,
+        saltati,
+        elaborati,
+        percorso_report
+    )
+
+    print("\n" + "=" * 55)
+    print("ELABORAZIONE TERMINATA")
+    print(f"Nuovi RPT: {elaborati}")
+    print(f"RPT gia' presenti: {saltati}")
+    print(f"Righe nel check: {len(dettagli_check)}")
+    print(f"Problemi: {len(errori)}")
+    print(f"Report: {percorso_report}")
+    print("=" * 55)
+
+
+if __name__ == "__main__":
+    main()
