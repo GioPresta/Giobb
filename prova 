@@ -874,4 +874,205 @@ def main():
         )
 
         if destinazione.exists():
-            salt
+            saltati += 1
+            log("  Gia' presente: non sovrascritto")
+            continue
+
+        try:
+            stats, righe = elabora_rpt(
+                file, destinazione
+            )
+
+            nuovi += 1
+            righe_modificate += righe
+
+            tipo = tipo_mp(file.stem)
+
+            for prodotto, s in stats.items():
+                statistiche[prodotto].append(
+                    (str(relativo), tipo, s)
+                )
+
+            log(
+                f"  RPT creato - "
+                f"{righe} righe elaborate"
+            )
+
+        except Exception as e:
+            errori.append(
+                (str(relativo), str(e))
+            )
+
+            log(f"  ERRORE: {e}")
+
+    log(
+        f"FASE 1 COMPLETATA - {tempo(inizio)}"
+    )
+
+    # ========================================================
+    # FASE 2 - REPORT TXT
+    # ========================================================
+
+    log("\nFASE 2/4 - REPORT TXT")
+
+    report = crea_report(
+        statistiche,
+        errori,
+        saltati,
+        nuovi,
+        righe_modificate
+    )
+
+    log(f"REPORT CREATO: {report}")
+
+    # ========================================================
+    # FASE 3 - CONVERSIONE XLSX NORMALE
+    # ========================================================
+
+    log("\nFASE 3/4 - CONVERSIONE XLSX")
+
+    coppie = []
+
+    for n, file in enumerate(files, 1):
+        relativo = file.relative_to(INPUT)
+        rpt_nuovo = OUTPUT / relativo
+
+        if not rpt_nuovo.exists():
+            continue
+
+        coppie.append(
+            (file, rpt_nuovo)
+        )
+
+        xlsx_old = (
+            XLSX_ORIGINALI / relativo
+        ).with_suffix(".xlsx")
+
+        xlsx_new = (
+            XLSX_MODIFICATI / relativo
+        ).with_suffix(".xlsx")
+
+        log(
+            f"[{n}/{totale_file}] "
+            f"Excel {relativo}"
+        )
+
+        operazioni = [
+            (
+                file,
+                xlsx_old,
+                "ORIGINALE"
+            ),
+            (
+                rpt_nuovo,
+                xlsx_new,
+                "MODIFICATO"
+            )
+        ]
+
+        for sorgente, destinazione, nome in operazioni:
+
+            if destinazione.exists():
+                log(
+                    f"  XLSX {nome} gia' presente"
+                )
+                continue
+
+            destinazione.parent.mkdir(
+                parents=True,
+                exist_ok=True
+            )
+
+            try:
+                righe = converti_xlsx(
+                    sorgente,
+                    destinazione
+                )
+
+                log(
+                    f"  XLSX {nome} creato - "
+                    f"{righe:,} righe"
+                )
+
+            except Exception as e:
+                log(
+                    f"  ERRORE XLSX {nome}: {e}"
+                )
+
+                errori.append(
+                    (str(relativo), str(e))
+                )
+
+                # Rimuove soltanto il file
+                # parziale di questa esecuzione.
+                if destinazione.exists():
+                    destinazione.unlink()
+
+    log(
+        f"FASE 3 COMPLETATA - {tempo(inizio)}"
+    )
+
+    # ========================================================
+    # FASE 4 - CHECK EXCEL WRITE_ONLY
+    # ========================================================
+
+    log("\nFASE 4/4 - CHECK CALCOLI")
+
+    check = nome_libero(
+        "CHECK_CALCOLI.xlsx"
+    )
+
+    try:
+        righe_check, errori_check, errori_struttura = (
+            crea_check(coppie, check)
+        )
+
+        log(f"CHECK CREATO: {check}")
+        log(
+            f"Righe controllate: {righe_check:,}"
+        )
+        log(
+            f"Errori matematici: {errori_check}"
+        )
+        log(
+            f"Errori strutturali: "
+            f"{len(errori_struttura)}"
+        )
+
+        if errori_struttura:
+            percorso_errori = nome_libero(
+                "errori_check.txt"
+            )
+
+            with percorso_errori.open(
+                "x", encoding="utf-8"
+            ) as f:
+                for errore in errori_struttura:
+                    f.write(errore + "\n")
+
+            log(
+                f"Dettaglio errori: {percorso_errori}"
+            )
+
+    except Exception as e:
+        log(f"ERRORE CHECK: {e}")
+
+        if check.exists():
+            check.unlink()
+
+    # ========================================================
+    # FINE
+    # ========================================================
+
+    log("\n" + "=" * 55)
+    log("ELABORAZIONE TERMINATA")
+    log(f"Nuovi RPT: {nuovi}")
+    log(f"RPT gia' presenti: {saltati}")
+    log(f"Righe modificate: {righe_modificate}")
+    log(f"Report TXT: {report}")
+    log(f"Tempo totale: {tempo(inizio)}")
+    log("=" * 55)
+
+
+if __name__ == "__main__":
+    main()
