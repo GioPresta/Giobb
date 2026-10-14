@@ -1,18 +1,10 @@
 
-PERCENTUALI = {
-    "PTEVPJ": Decimal("0.025034000"),
-    "PTEVPL_Z5": Decimal("0.025034000"),
-    "PTPVPI": Decimal("0.004571000"),
-    "PTPVPK": Decimal("0.004571000"),
-    "PTPMUG": Decimal("0.024120000"),
-    "PTEVPK": Decimal("0.031873501"),
-    "PTPVPL": Decimal("0.004464654"),
-    "PTQVPA": Decimal("0"),
-    "PTOP18": Decimal("0.004500000"),
-    "PTOP19": Decimal("0.004500000"),
-    "PTOP21": Decimal("0"),
-    "PTRVPA": Decimal("0.033802741"),
-    "PTPVPM": Decimal("0.004200000"),
-    "PTOP22": Decimal("0"),
-    "PTPVPN": Decimal("0.004710510"),
-}
+# Se output esiste, crea una nuova cartella numerata
+cartella_base = Path("output")
+CARTELLA_OUTPUT = cartella_base
+
+numero_output = 2
+
+while CARTELLA_OUTPUT.exists():
+    CARTELLA_OUTPUT = Path(f"output_{numero_output}")
+    numero_output += 1
