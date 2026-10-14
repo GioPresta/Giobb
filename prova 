@@ -1,1 +1,388 @@
-py -3.13 -m pip install spyder --user --trusted-host bigdata-repository.bp2i.echonet
+
+from pathlib import Path
+from collections import defaultdict
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from datetime import datetime
+import shutil
+import re
+
+# ==========================================================
+# CONFIGURAZIONE
+# ==========================================================
+
+CARTELLA_INPUT = Path("input")
+CARTELLA_OUTPUT = Path("output")
+
+# Inserisci qui le tariffe da modificare.
+# 0.03 = 3%, 0.025 = 2.5%
+PERCENTUALI = {
+    "PRODOTTO_A": Decimal("0.03"),
+    "PRODOTTO_B": Decimal("0.025"),
+    "PRODOTTO_C": Decimal("0.04"),
+}
+
+# Delimitatori supportati
+DELIMITATORI = [b"\t", b";", b"|", b","]
+
+COLONNE_MU = [
+    f"MF_INIT_UNITS({i})" for i in range(1, 7)
+]
+
+# ==========================================================
+# FUNZIONI
+# ==========================================================
+
+def tipo_modelpoint(nome):
+    nome = nome.upper()
+
+    ha_mo = "MO" in nome
+    ha_mu = "MU" in nome
+
+    if ha_mo and not ha_mu:
+        return "MO"
+    if ha_mu and not ha_mo:
+        return "MU"
+
+    # Ambiguo oppure non riconosciuto
+    return None
+
+
+def numero(valore):
+    testo = valore.strip()
+
+    if not testo:
+        return Decimal("0")
+
+    return Decimal(testo)
+
+
+def formato_numero(valore, originale):
+    originale = originale.strip()
+
+    # Mantiene il numero di decimali
+    if "." in originale:
+        decimali = len(originale.split(".")[-1])
+    else:
+        decimali = 0
+
+    quant = Decimal("1").scaleb(-decimali)
+
+    risultato = valore.quantize(
+        quant,
+        rounding=ROUND_HALF_UP
+    )
+
+    return f"{risultato:.{decimali}f}"
+
+
+def separa_riga(riga):
+    if riga.endswith(b"\r\n"):
+        return riga[:-2], b"\r\n"
+    if riga.endswith(b"\n"):
+        return riga[:-1], b"\n"
+    if riga.endswith(b"\r"):
+        return riga[:-1], b"\r"
+    return riga, b""
+
+
+def trova_struttura(righe):
+    # Cerca l'intestazione nelle prime 100 righe
+    for indice, riga in enumerate(righe[:100]):
+        contenuto, _ = separa_riga(riga)
+
+        for delimitatore in DELIMITATORI:
+            colonne = [
+                x.strip().decode("ascii", errors="replace").upper()
+                for x in contenuto.split(delimitatore)
+            ]
+
+            if "PRODOTTO" in colonne and "TOPUP_PREM" in colonne:
+                if len(colonne) != len(set(colonne)):
+                    raise ValueError(
+                        "Intestazione con colonne duplicate"
+                    )
+                return indice, delimitatore, colonne
+
+    raise ValueError(
+        "Intestazione non riconosciuta o formato non supportato"
+    )
+
+
+def modifica_file(percorso, destinazione):
+    tipo = tipo_modelpoint(percorso.stem)
+
+    if tipo is None:
+        raise ValueError(
+            "Impossibile distinguere MO e MU dal nome"
+        )
+
+    dati = percorso.read_bytes()
+    righe = dati.splitlines(keepends=True)
+
+    indice_header, delimitatore, colonne = trova_struttura(righe)
+
+    richieste = ["PRODOTTO", "TOPUP_PREM"]
+
+    if tipo == "MO":
+        richieste.append("INIT_UNITS")
+    else:
+        richieste.extend(COLONNE_MU)
+
+    mancanti = [c for c in richieste if c not in colonne]
+
+    if mancanti:
+        raise ValueError(
+            "Colonne mancanti: " + ", ".join(mancanti)
+        )
+
+    idx_prodotto = colonne.index("PRODOTTO")
+    idx_topup = colonne.index("TOPUP_PREM")
+
+    if tipo == "MO":
+        idx_units = colonne.index("INIT_UNITS")
+    else:
+        idx_multi = [colonne.index(c) for c in COLONNE_MU]
+
+    statistiche = defaultdict(
+        lambda: {
+            "righe": 0,
+            "totale_prima": Decimal("0"),
+            "totale_dopo": Decimal("0"),
+        }
+    )
+
+    nuove_righe = list(righe)
+
+    for i in range(indice_header + 1, len(righe)):
+        contenuto, fine_riga = separa_riga(righe[i])
+
+        if not contenuto.strip():
+            continue
+
+        campi = contenuto.split(delimitatore)
+
+        if len(campi) != len(colonne):
+            raise ValueError(
+                f"Numero colonne errato alla riga {i + 1}"
+            )
+
+        prodotto = campi[idx_prodotto].strip().decode(
+            "ascii", errors="replace"
+        )
+
+        if prodotto not in PERCENTUALI:
+            continue
+
+        percentuale = PERCENTUALI[prodotto]
+
+        try:
+            if tipo == "MO":
+                units = numero(
+                    campi[idx_units].decode("ascii")
+                )
+            else:
+                units = sum(
+                    (
+                        numero(campi[j].decode("ascii"))
+                        for j in idx_multi
+                    ),
+                    Decimal("0")
+                )
+
+            topup_originale = campi[idx_topup].decode("ascii")
+            topup_prima = numero(topup_originale)
+
+            topup_calcolato = units * percentuale
+            topup_testo = formato_numero(
+                topup_calcolato,
+                topup_originale
+            )
+
+            # Preserva gli spazi intorno al campo
+            campo_originale = campi[idx_topup]
+
+            sinistra = len(campo_originale) - len(
+                campo_originale.lstrip(b" ")
+            )
+            destra = len(campo_originale) - len(
+                campo_originale.rstrip(b" ")
+            )
+
+            spazio_sx = b" " * sinistra
+            spazio_dx = b" " * destra
+
+            nuovo_campo = (
+                spazio_sx
+                + topup_testo.encode("ascii")
+                + spazio_dx
+            )
+
+            # Non permette l'allargamento del campo.
+            # Se non entra, il file non viene modificato.
+            if len(nuovo_campo) > len(campo_originale):
+                raise ValueError(
+                    "Il nuovo valore TOPUP_PREM "
+                    "supera la larghezza originale"
+                )
+
+            # Compensa con spazi a sinistra
+            differenza = len(campo_originale) - len(nuovo_campo)
+            nuovo_campo = b" " * differenza + nuovo_campo
+
+            campi[idx_topup] = nuovo_campo
+
+            nuove_righe[i] = (
+                delimitatore.join(campi) + fine_riga
+            )
+
+            s = statistiche[prodotto]
+            s["righe"] += 1
+            s["totale_prima"] += topup_prima
+            s["totale_dopo"] += Decimal(topup_testo)
+
+        except (InvalidOperation, UnicodeError, ValueError) as e:
+            raise ValueError(
+                f"Errore riga {i + 1}, prodotto {prodotto}: {e}"
+            )
+
+    # Scrive solo dopo aver validato tutte le righe
+    destinazione.write_bytes(b"".join(nuove_righe))
+
+    return tipo, statistiche
+
+
+# ==========================================================
+# PROGRAMMA PRINCIPALE
+# ==========================================================
+
+def main():
+    if not CARTELLA_INPUT.is_dir():
+        print("ERRORE: cartella input non trovata.")
+        return
+
+    if CARTELLA_OUTPUT.exists():
+        print(
+            "ERRORE: la cartella output esiste gia'. "
+            "Spostala o rinominala prima di procedere."
+        )
+        return
+
+    files = sorted(CARTELLA_INPUT.rglob("*.rpt"))
+
+    if not files:
+        print("Nessun file .rpt trovato.")
+        return
+
+    CARTELLA_OUTPUT.mkdir()
+
+    riepilogo = defaultdict(list)
+    errori = []
+    modificati = 0
+    invariati = 0
+
+    for file in files:
+        relativo = file.relative_to(CARTELLA_INPUT)
+        destinazione = CARTELLA_OUTPUT / relativo
+
+        destinazione.parent.mkdir(
+            parents=True, exist_ok=True
+        )
+
+        try:
+            tipo, statistiche = modifica_file(
+                file, destinazione
+            )
+
+            if statistiche:
+                modificati += 1
+
+                for prodotto, s in statistiche.items():
+                    riepilogo[prodotto].append(
+                        (str(relativo), tipo, s)
+                    )
+            else:
+                invariati += 1
+
+            print(f"OK: {relativo}")
+
+        except Exception as e:
+            # In caso di errore copia l'originale invariato
+            shutil.copy2(file, destinazione)
+            errori.append((str(relativo), str(e)))
+            print(f"ATTENZIONE: {relativo} - {e}")
+
+    report = CARTELLA_OUTPUT / "report_modifiche.txt"
+
+    with report.open("w", encoding="utf-8") as f:
+        f.write("RIEPILOGO MODIFICHE MODELPOINT\n")
+        f.write("=" * 55 + "\n")
+        f.write(
+            f"Data: {datetime.now():%d/%m/%Y %H:%M:%S}\n"
+        )
+        f.write(f"File analizzati: {len(files)}\n")
+        f.write(f"File modificati: {modificati}\n")
+        f.write(f"File invariati: {invariati}\n")
+        f.write(f"File con errori: {len(errori)}\n\n")
+
+        for prodotto in sorted(PERCENTUALI):
+            percentuale = PERCENTUALI[prodotto] * 100
+
+            f.write("-" * 55 + "\n")
+            f.write(f"TARIFFA: {prodotto}\n")
+            f.write(f"Percentuale: {percentuale}%\n")
+
+            elementi = riepilogo.get(prodotto, [])
+
+            if not elementi:
+                f.write(
+                    "Nessuna modifica effettuata.\n\n"
+                )
+                continue
+
+            totale_righe = 0
+            totale_prima = Decimal("0")
+            totale_dopo = Decimal("0")
+
+            for nome, tipo, s in elementi:
+                f.write(f"\n  Modelpoint: {nome}\n")
+                f.write(f"  Tipologia: {tipo}\n")
+                f.write(
+                    f"  Righe elaborate: {s['righe']}\n"
+                )
+                f.write(
+                    f"  TOPUP_PREM prima: "
+                    f"{s['totale_prima']}\n"
+                )
+                f.write(
+                    f"  TOPUP_PREM dopo: "
+                    f"{s['totale_dopo']}\n"
+                )
+
+                totale_righe += s["righe"]
+                totale_prima += s["totale_prima"]
+                totale_dopo += s["totale_dopo"]
+
+            f.write(f"\n  TOTALE RIGHE: {totale_righe}\n")
+            f.write(f"  TOTALE PRIMA: {totale_prima}\n")
+            f.write(f"  TOTALE DOPO: {totale_dopo}\n\n")
+
+        if errori:
+            f.write("\n" + "=" * 55 + "\n")
+            f.write("FILE NON MODIFICATI PER ERRORE\n")
+            f.write("=" * 55 + "\n")
+
+            for nome, errore in errori:
+                f.write(f"\n{nome}\n  Motivo: {errore}\n")
+
+    print("\n" + "=" * 45)
+    print("ELABORAZIONE TERMINATA")
+    print(f"File analizzati: {len(files)}")
+    print(f"File modificati: {modificati}")
+    print(f"File invariati: {invariati}")
+    print(f"File con errori: {len(errori)}")
+    print(f"Report: {report}")
+    print("=" * 45)
+
+
+if __name__ == "__main__":
+    main()
